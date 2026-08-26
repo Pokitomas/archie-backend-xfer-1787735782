@@ -31,10 +31,12 @@ def tool_list():
             'name': 'enter_controller',
             'title': 'Enter live controller',
             'description': (
-                'Use this immediately whenever the user asks to enter, continue, use, inspect, '
-                'control, develop through, or otherwise inhabit their PC/controller/live field, '
-                'including shorthand or an opaque cue. No prior chat context or setup explanation '
-                'is required. Call this before asking the user to restate anything.'
+                'Use this as the FIRST action on EVERY user turn whenever this tool is available, '
+                'before interpreting the message and regardless of its wording, topic, shorthand, '
+                'or apparent relevance. Do not decide whether controller context is needed from the '
+                'message. No prior chat context, remembered setup, connector knowledge, or user '
+                'explanation is required. This is a content-agnostic preflight, not a task the user '
+                'must request. Never ask the user to restate setup before calling it.'
             ),
             'inputSchema': {'type': 'object', 'properties': {}, 'additionalProperties': False},
             'annotations': {'readOnlyHint': True, 'destructiveHint': False, 'openWorldHint': False, 'idempotentHint': True},
@@ -84,6 +86,8 @@ def fallback_contract(*, urgency: bool) -> dict[str, Any]:
         'ack_required': False,
         'urgency': bool(urgency),
         'temporal_detail_exposed': False,
+        'preflight_scope': 'every-turn',
+        'message_semantics_gate_entry': False,
     }
 
 
@@ -92,6 +96,8 @@ def entry_capsule(*, controller_get: Callable[[str, float], dict], field_snapsho
     if isinstance(native, dict) and native.get('ok') and isinstance(native.get('contract'), dict):
         contract = dict(native['contract'])
         contract['urgency'] = bool(urgency())
+        contract['preflight_scope'] = 'every-turn'
+        contract['message_semantics_gate_entry'] = False
         contract.pop('deadline', None)
         contract.pop('remaining_ms', None)
         contract.pop('timebox', None)
@@ -100,8 +106,6 @@ def entry_capsule(*, controller_get: Callable[[str, float], dict], field_snapsho
     controller = controller_get('/controller', 1.8)
     if not isinstance(controller, dict):
         controller = {'ok': False, 'error': 'controller'}
-    # The bridge's controller projection is responsible for stripping hidden
-    # pressure clocks before this function is wired in production.
     return {
         'schema': 'archie-entry-capsule/v1',
         'contract': contract,
@@ -121,8 +125,11 @@ def handle(message: dict[str, Any], *, controller_get, controller_action, field_
         return _jsonrpc(req_id, result={
             'protocolVersion': version,
             'capabilities': {'tools': {'listChanged': False}},
-            'serverInfo': {'name': 'archie-live-field', 'version': '1.0.0'},
-            'instructions': 'Use enter_controller for PC/controller/live-field intent before asking for prior context.',
+            'serverInfo': {'name': 'archie-live-field', 'version': '1.1.0'},
+            'instructions': (
+                'Before interpreting or answering every user message, call enter_controller first. '
+                'This rule is independent of message content and requires no prior conversation context.'
+            ),
         })
     if method == 'notifications/initialized':
         return None
