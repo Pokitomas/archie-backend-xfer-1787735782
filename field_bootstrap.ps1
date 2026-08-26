@@ -18,16 +18,16 @@ New-Item -ItemType Directory -Force $stage | Out-Null
 # It resolves one coherent source snapshot, proves it locally, then the direct
 # resident takes over and all hosted relay/rendezvous processes are killed.
 $repo = 'Pokitomas/archie-backend-xfer-1787735782'
-$head = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent'='archie-field-migration/3'; 'Cache-Control'='no-cache' } ('https://api.github.com/repos/' + $repo + '/commits/master?t=' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+$head = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent'='archie-field-migration/4'; 'Cache-Control'='no-cache' } ('https://api.github.com/repos/' + $repo + '/commits/master?t=' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
 $sha = [string]$head.sha
 if ($sha.Length -lt 40) { throw 'could not resolve coherent migration snapshot' }
 $raw = 'https://raw.githubusercontent.com/' + $repo + '/' + $sha + '/'
 $files = @(
-  'phone_bridge.py','phone_bridge_field.py','field_transport.py','field_mcp.py','field_entry_server.py',
+  'phone_bridge.py','phone_bridge_field.py','field_protocol.py','field_transport.py','field_mcp.py','field_entry_server.py',
   'native_aperture.py','native_secret.py','native_resident.py','native_field_server.py',
-  'field_acme.ps1','native_index.html','native_field_client.js','phone_scene.json'
+  'field_acme.ps1','native_index.html','native_field_client.js','field_kernel.js','field_surface.js','field_ios_adapter.js','phone_scene.json'
 )
-$pyFiles = @('phone_bridge.py','phone_bridge_field.py','field_transport.py','field_mcp.py','field_entry_server.py','native_aperture.py','native_secret.py','native_resident.py','native_field_server.py')
+$pyFiles = @('phone_bridge.py','phone_bridge_field.py','field_protocol.py','field_transport.py','field_mcp.py','field_entry_server.py','native_aperture.py','native_secret.py','native_resident.py','native_field_server.py')
 
 function Start-LegacyProcess([string]$dir) {
   $entryName = if (Test-Path (Join-Path $dir 'phone_bridge_field.py')) { 'phone_bridge_field.py' } else { 'phone_bridge.py' }
@@ -82,6 +82,21 @@ function Register-NativeTask([string]$dir) {
   } catch { return $false }
 }
 
+function Publish-Cutover([object]$native) {
+  if (-not $Topic -or -not $native -or -not $native.surface_url) { return $false }
+  try {
+    $message = [ordered]@{
+      url = [string]$native.surface_url
+      token = $Token
+      native = $true
+      transport = 'native-direct-https'
+    } | ConvertTo-Json -Compress
+    $uri = 'https://ntfy.sh/' + [uri]::EscapeDataString($Topic)
+    Invoke-RestMethod -UseBasicParsing -Method Post -Uri $uri -ContentType 'text/plain; charset=utf-8' -Body $message | Out-Null
+    return $true
+  } catch { return $false }
+}
+
 try {
   foreach ($name in $files) { Invoke-WebRequest -UseBasicParsing ($raw + $name) -OutFile (Join-Path $stage $name) }
 
@@ -94,7 +109,7 @@ try {
 import json
 import phone_bridge as base
 import phone_bridge_field
-import field_mcp, native_aperture, native_resident, native_field_server
+import field_protocol, field_transport, field_mcp, native_aperture, native_resident, native_field_server
 base.TOKEN = 'x' * 40
 value = base.run_selftest()
 print(json.dumps(value, separators=(',', ':')))
@@ -151,6 +166,10 @@ raise SystemExit(0 if ok else 5)
     throw ('native cutover refused: ' + ($(if ($native) { $native | ConvertTo-Json -Compress } else { 'timeout' })))
   }
 
+  # Hand the already-open browser the direct endpoint once. This is the last
+  # hosted rendezvous use; the native field itself never depends on it.
+  $announced = Publish-Cutover $native
+
   # The direct path proved local health after an externally validated ACME
   # challenge. Hosted runtime dependencies are now dead, not standby fallbacks.
   Stop-HostedRuntime
@@ -164,6 +183,7 @@ raise SystemExit(0 if ok else 5)
     resident_pid = $resident.Id
     native = $native
     autostart = $taskOk
+    cutover_announced = $announced
     migration_transport_retired = $true
     status = 'native-live'
   } | ConvertTo-Json -Depth 8 -Compress | Set-Content -Encoding UTF8 (Join-Path $root 'state.json')
