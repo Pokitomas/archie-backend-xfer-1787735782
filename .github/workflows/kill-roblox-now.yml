@@ -1,0 +1,14 @@
+name: kill-roblox-now
+on:
+  push:
+    paths: ['.github/workflows/kill-roblox-now.yml']
+jobs:
+  kill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call existing ARCHIE Funnel cmd wrapper
+        shell: bash
+        run: |
+          set -e
+          URL='https://desktop-6fn9b4m-1.tail1bf489.ts.net/XPPQeExjz2mN1QJraSr8clthZawCCXm1Ss2EEcHdeTo/cmd?b=c2V0ICtlCnBvd2Vyc2hlbGwuZXhlIC1Ob0xvZ28gLU5vUHJvZmlsZSAtQ29tbWFuZCAiJHA9R2V0LVByb2Nlc3MgLUVycm9yQWN0aW9uIFNpbGVudGx5Q29udGludWUgfCBXaGVyZS1PYmplY3QgeyAkXy5Qcm9jZXNzTmFtZSAtbGlrZSAnUm9ibG94KicgfTsgaWYoJHApeyRwIHwgU3RvcC1Qcm9jZXNzIC1Gb3JjZSAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZX07IFN0YXJ0LVNsZWVwIC1NaWxsaXNlY29uZHMgNTAwOyAkcT1HZXQtUHJvY2VzcyAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8IFdoZXJlLU9iamVjdCB7ICRfLlByb2Nlc3NOYW1lIC1saWtlICdSb2Jsb3gqJyB9OyBpZigkcSl7JHEgfCBTZWxlY3QtT2JqZWN0IFByb2Nlc3NOYW1lLElkIHwgQ29udmVydFRvLUpzb24gLUNvbXByZXNzfWVsc2V7J1JPQkxPWF9DTE9TRUQnfSIK'
+          curl -fsS --max-time 20 "$URL"
