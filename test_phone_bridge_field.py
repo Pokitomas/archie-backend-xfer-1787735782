@@ -122,7 +122,7 @@ class FieldBridgeContract(unittest.TestCase):
         self.assertEqual(wire['channel'], 'controller.state')
         self.assertEqual(wire['meta']['authority'], 'controller')
         public = wire['payload']
-        self.assertTrue(public['urgency'])
+        self.assertFalse(public['urgency'])
         encoded = json.dumps(public).lower()
         self.assertNotIn('timebox', encoded)
         self.assertNotIn('remaining_ms', encoded)
