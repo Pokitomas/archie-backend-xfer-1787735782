@@ -1,25 +1,16 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import threading
-import time
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from typing import Any
 
+from field_protocol import FieldRecord, record
 
-@dataclass(frozen=True, slots=True)
-class FieldEvent:
-    serial: int
-    channel: str
-    shape: str
-    stream: str
-    revision: int
-    final: bool
-    payload: Any
-    meta: dict[str, Any]
-    at: float
+# Compatibility name for callers/tests; there is now one record type across
+# canonical and transport field layers.
+FieldEvent = FieldRecord
 
 
 class LiveField:
@@ -33,9 +24,9 @@ class LiveField:
 
     def __init__(self, limit: int = 768):
         self._limit = max(64, int(limit))
-        self._events: deque[FieldEvent] = deque(maxlen=self._limit)
+        self._events: deque[FieldRecord] = deque(maxlen=self._limit)
         self._serial = 0
-        self._latest: dict[str, FieldEvent] = {}
+        self._latest: dict[str, FieldRecord] = {}
         self._lock = threading.RLock()
         self._cond = threading.Condition(self._lock)
 
@@ -43,44 +34,6 @@ class LiveField:
     def serial(self) -> int:
         with self._lock:
             return self._serial
-
-    @staticmethod
-    def _channel(value: Any) -> str:
-        s = ''.join(c if c.isalnum() or c in '._/-' else '_' for c in str(value or 'field'))
-        return (s.strip('._/-') or 'field')[:120]
-
-    @staticmethod
-    def _shape(value: Any) -> str:
-        s = ''.join(c if c.isalnum() or c in '._/+;=-' else '_' for c in str(value or 'opaque'))
-        return (s.strip('._/-') or 'opaque')[:120]
-
-    @staticmethod
-    def _stream(value: Any) -> str:
-        s = ''.join(c if c.isalnum() or c in '._/-' else '_' for c in str(value or ''))
-        return s[:160]
-
-    @staticmethod
-    def _json_safe(value: Any, *, max_text: int = 128_000) -> Any:
-        if value is None or isinstance(value, (bool, int, float)):
-            return value
-        if isinstance(value, str):
-            return value[:max_text]
-        if isinstance(value, bytes):
-            return {
-                'binary': True,
-                'bytes': len(value),
-                'sha256': hashlib.sha256(value).hexdigest(),
-            }
-        if isinstance(value, (list, tuple)):
-            return [LiveField._json_safe(x, max_text=max_text) for x in value[:512]]
-        if isinstance(value, dict):
-            out = {}
-            for i, (k, v) in enumerate(value.items()):
-                if i >= 512:
-                    break
-                out[str(k)[:160]] = LiveField._json_safe(v, max_text=max_text)
-            return out
-        return str(value)[:max_text]
 
     def publish(
         self,
@@ -92,33 +45,21 @@ class LiveField:
         revision: int = 0,
         final: bool = False,
         meta: dict[str, Any] | None = None,
-    ) -> FieldEvent:
-        channel = self._channel(channel)
-        shape = self._shape(shape)
-        stream = self._stream(stream)
-        try:
-            revision = max(0, int(revision))
-        except Exception:
-            revision = 0
-        safe_payload = self._json_safe(payload)
-        safe_meta = self._json_safe(meta or {})
-        if not isinstance(safe_meta, dict):
-            safe_meta = {'value': safe_meta}
+    ) -> FieldRecord:
         with self._cond:
             self._serial += 1
-            event = FieldEvent(
-                serial=self._serial,
-                channel=channel,
-                shape=shape,
-                stream=stream,
-                revision=revision,
-                final=bool(final),
-                payload=safe_payload,
-                meta=safe_meta,
-                at=time.time(),
+            event = record(
+                self._serial,
+                channel,
+                shape_value=shape,
+                payload=payload,
+                stream_value=stream,
+                revision_value=revision,
+                final=final,
+                meta=meta,
             )
             self._events.append(event)
-            self._latest[channel] = event
+            self._latest[event.channel] = event
             self._cond.notify_all()
             return event
 
