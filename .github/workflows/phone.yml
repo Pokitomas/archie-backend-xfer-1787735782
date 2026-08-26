@@ -4,16 +4,21 @@ on:
     branches: [master]
     paths:
       - index.html
-      - phone_client.js
+      - field_client.js
+      - field_bootstrap.ps1
       - phone_bridge.py
       - phone_bridge_fast.py
+      - phone_bridge_field.py
       - phone_scene.json
       - phone_selftest.py
       - test_phone_bridge_fast.py
+      - test_phone_bridge_field.py
       - acoustic_field.py
       - test_acoustic_field.py
       - activity_field.py
       - test_activity_field.py
+      - live_field.py
+      - test_live_field.py
       - .github/workflows/phone.yml
   workflow_dispatch:
 permissions:
@@ -27,48 +32,59 @@ jobs:
         with:
           python-version: '3.12'
       - name: Python syntax
-        run: python -m py_compile phone_bridge.py phone_bridge_fast.py phone_selftest.py test_phone_bridge_fast.py acoustic_field.py test_acoustic_field.py activity_field.py test_activity_field.py
+        run: python -m py_compile phone_bridge.py phone_bridge_fast.py phone_bridge_field.py phone_selftest.py test_phone_bridge_fast.py test_phone_bridge_field.py acoustic_field.py test_acoustic_field.py activity_field.py test_activity_field.py live_field.py test_live_field.py
       - name: Bridge contract
         run: python phone_selftest.py
       - name: Fast bridge contract
         run: python test_phone_bridge_fast.py
-      - name: Acoustic field contract
+      - name: Generic field contract
+        run: python test_live_field.py
+      - name: Field bridge contract
+        run: python test_phone_bridge_field.py
+      - name: Acoustic adapter contract
         run: python test_acoustic_field.py
-      - name: Activity field contract
+      - name: Activity adapter contract
         run: python test_activity_field.py
-      - name: Static shell contract
+      - name: Static field contract
         run: |
           python - <<'PY'
           from pathlib import Path
           import json
           html=Path('index.html').read_text(encoding='utf-8')
-          js=Path('phone_client.js').read_text(encoding='utf-8')
-          fast=Path('phone_bridge_fast.py').read_text(encoding='utf-8')
-          assert 'phone_client.js' in html
+          js=Path('field_client.js').read_text(encoding='utf-8')
+          field=Path('phone_bridge_field.py').read_text(encoding='utf-8')
+          core=Path('live_field.py').read_text(encoding='utf-8')
+          boot=Path('field_bootstrap.ps1').read_text(encoding='utf-8')
+          assert 'field_client.js' in html and 'phone_client.js' not in html
           assert html.lower().count('<button') == 1
           assert 'id="fallback"' not in html and 'id="retry"' not in html and 'id="dock"' not in html
-          required=['/api/selftest','recoverForever','text-stream','screen.mjpg','applyScene','loadStaticScene','audioQueue','queueText','compositionstart','visualViewport','reply.ndjson','activity.ndjson','startActivityStream','voice-state','voiceWanted','voiceEpoch','phone_bridge_fast.py','acoustic_field.py','activity_field.py']
+          required=['/api/field','/api/field.ndjson','ARCHIE_FIELD','recoverForever','screen.mjpg','applyScene','compositionstart','visualViewport','field_bootstrap.ps1']
           assert all(x in js for x in required), [x for x in required if x not in js]
+          for legacy in ['/api/text-stream','/api/audio','/api/voice-state','/api/reply.ndjson','/api/activity.ndjson']:
+              assert legacy not in js, legacy
           assert 'vercel.app' not in (html+js).lower()
           assert '/api/pointer' not in js and 'pointerAction' not in js
           for forbidden in ['speechSynthesis','new Audio(','<audio','.play(']:
               assert forbidden not in html+js, forbidden
-          assert 'desktop_notice' in fast and '/api/activity.ndjson' in fast
-          assert "'seconds': _ENTRY_SECONDS" in fast
+          assert "class LiveField" in core
+          for word in ['speechSynthesis','ImageGrab','controller_action','phone/audio','phone/text']:
+              assert word not in core, word
+          assert "path == '/api/field.ndjson'" in field and "path != '/api/field'" in field
+          assert "_ADAPTERS.get(shape)" in field
+          assert 'py_compile' in boot and 'run_selftest' in boot and 'candidate-refused' in boot
           scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
-          assert int(scene.get('revision',0)) >= 4
           feat=scene.get('features',{})
-          assert feat.get('textFirst') is True
+          assert int(scene.get('revision',0)) >= 5
+          assert feat.get('fieldProtocol') is True
+          assert feat.get('arbitraryChannels') is True
+          assert feat.get('arbitraryShapes') is True
           assert feat.get('singleControl') is True
           assert feat.get('screenInteraction') is False
           assert feat.get('outputAudioOnPhone') is False
-          assert feat.get('controllerAcousticField') is True
-          assert feat.get('activityStream') is True
-          assert feat.get('controllerActionParity') is True
-          assert feat.get('desktopPresencePulse') is True
           binds={x.get('bind') for x in scene.get('layers',[]) if isinstance(x,dict)}
-          assert {'reply.text','activity.text','pc.focus'} <= binds
-          print('phone contracts ok',len(html),len(js),len(fast))
+          assert 'field.controller.primary.payload.reply.text' in binds
+          assert 'field.machine.state.payload.focus' in binds
+          print('field contracts ok',len(html),len(js),len(field),len(core))
           PY
       - name: Browser script syntax
-        run: node --check phone_client.js
+        run: node --check field_client.js
