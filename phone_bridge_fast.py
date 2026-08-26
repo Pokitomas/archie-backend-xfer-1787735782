@@ -25,14 +25,15 @@ LATEST = {
 _LAST_RESPONSE_ID = None
 
 
+def _text_active() -> bool:
+    with base.LOCK:
+        return bool(base.BUS.get('text_active'))
+
+
 def _response_id(reply: dict):
     if not reply:
         return None
-    return (
-        reply.get('input_id'),
-        reply.get('seq'),
-        reply.get('stream_id'),
-    )
+    return (reply.get('input_id'), reply.get('seq'), reply.get('stream_id'))
 
 
 def _revision(reply: dict) -> int:
@@ -45,52 +46,62 @@ def _revision(reply: dict) -> int:
     return 0
 
 
-def _append_gestures(items):
+def _append_gestures_locked(items):
     changed = False
-    with FAST_COND:
-        for item in items or ():
-            GESTURES.append({
-                'seq': item.seq,
-                'generation': item.generation,
-                'revision': item.revision,
-                'kind': item.kind,
-                'start': item.start,
-                'end': item.end,
-                'pace': item.pace,
-                'pressure': item.pressure,
-                'contour': item.contour,
-                'continuity': item.continuity,
-                'reason': item.reason,
-            })
-            changed = True
-        if changed:
-            FAST_COND.notify_all()
+    for item in items or ():
+        GESTURES.append({
+            'seq': item.seq,
+            'generation': item.generation,
+            'revision': item.revision,
+            'kind': item.kind,
+            'start': item.start,
+            'end': item.end,
+            'pace': item.pace,
+            'pressure': item.pressure,
+            'contour': item.contour,
+            'continuity': item.continuity,
+            'reason': item.reason,
+        })
+        changed = True
     return changed
 
 
 def set_voice_active(active: bool):
     global VOICE_ACTIVE
     active = bool(active)
-    with FAST_LOCK:
+    text_active = _text_active()
+    with FAST_COND:
         changed = active != VOICE_ACTIVE
         VOICE_ACTIVE = active
-    if changed:
-        _append_gestures(FIELD.set_user_active(active or bool(base.BUS.get('text_active'))))
-    return snapshot()
+        if changed:
+            gestures = FIELD.set_user_active(active or text_active)
+            if _append_gestures_locked(gestures):
+                LATEST['serial'] = int(LATEST.get('serial') or 0) + 1
+            LATEST['acoustic'] = FIELD.snapshot()
+            LATEST['at'] = time.time()
+            FAST_COND.notify_all()
+        return _snapshot_locked(text_active=text_active)
+
+
+def _snapshot_locked(*, text_active: bool | None = None):
+    if text_active is None:
+        text_active = _text_active()
+    return {
+        'serial': int(LATEST.get('serial') or 0),
+        'reply': dict(LATEST.get('reply') or {}),
+        'seat': dict(LATEST.get('seat') or {}),
+        'acoustic': dict(FIELD.snapshot()),
+        'gestures': list(GESTURES)[-24:],
+        'voice_active': bool(VOICE_ACTIVE),
+        'text_active': bool(text_active),
+        'at': float(LATEST.get('at') or 0.0),
+    }
 
 
 def snapshot():
+    text_active = _text_active()
     with FAST_LOCK:
-        return {
-            'serial': int(LATEST.get('serial') or 0),
-            'reply': dict(LATEST.get('reply') or {}),
-            'seat': dict(LATEST.get('seat') or {}),
-            'acoustic': dict(FIELD.snapshot()),
-            'gestures': list(GESTURES)[-24:],
-            'voice_active': bool(VOICE_ACTIVE),
-            'text_active': bool(base.BUS.get('text_active')),
-            'at': float(LATEST.get('at') or 0.0),
-        }
+        return _snapshot_locked(text_active=text_active)
 
 
 def observe_once(seat: dict | None = None):
@@ -99,33 +110,34 @@ def observe_once(seat: dict | None = None):
     seat = dict(seat or base.safe_seat())
     reply = dict(seat.get('reply') or {})
     response_id = _response_id(reply)
-    user_active = bool(VOICE_ACTIVE or base.BUS.get('text_active'))
+    text_active = _text_active()
 
-    gestures = []
-    if user_active != FIELD.user_active:
-        gestures.extend(FIELD.set_user_active(user_active))
-
-    if response_id is not None and _LAST_RESPONSE_ID is not None and response_id != _LAST_RESPONSE_ID:
-        gestures.extend(FIELD.supersede())
-    if response_id is not None:
-        _LAST_RESPONSE_ID = response_id
-
-    text = str(reply.get('text') or '')
-    if response_id is not None:
-        gestures.extend(FIELD.observe(text, _revision(reply), done=bool(reply.get('done'))))
-    if not user_active:
-        gestures.extend(FIELD.advance())
-
-    _append_gestures(gestures)
-    old_reply = LATEST.get('reply') or {}
-    changed = (
-        old_reply.get('text') != reply.get('text')
-        or old_reply.get('done') != reply.get('done')
-        or old_reply.get('revision') != reply.get('revision')
-        or old_reply.get('seq') != reply.get('seq')
-        or bool(gestures)
-    )
     with FAST_COND:
+        user_active = bool(VOICE_ACTIVE or text_active)
+        gestures = []
+        if user_active != FIELD.user_active:
+            gestures.extend(FIELD.set_user_active(user_active))
+
+        if response_id is not None and _LAST_RESPONSE_ID is not None and response_id != _LAST_RESPONSE_ID:
+            gestures.extend(FIELD.supersede())
+        if response_id is not None:
+            _LAST_RESPONSE_ID = response_id
+
+        text = str(reply.get('text') or '')
+        if response_id is not None:
+            gestures.extend(FIELD.observe(text, _revision(reply), done=bool(reply.get('done'))))
+        if not user_active:
+            gestures.extend(FIELD.advance())
+
+        old_reply = LATEST.get('reply') or {}
+        changed = (
+            old_reply.get('text') != reply.get('text')
+            or old_reply.get('done') != reply.get('done')
+            or old_reply.get('revision') != reply.get('revision')
+            or old_reply.get('seq') != reply.get('seq')
+            or bool(gestures)
+        )
+        _append_gestures_locked(gestures)
         LATEST['reply'] = reply
         LATEST['seat'] = {
             'active_occupant': seat.get('active_occupant'),
@@ -138,11 +150,11 @@ def observe_once(seat: dict | None = None):
         if changed:
             LATEST['serial'] = int(LATEST.get('serial') or 0) + 1
             FAST_COND.notify_all()
-    return snapshot()
+        return _snapshot_locked(text_active=text_active)
 
 
 def observer_worker():
-    """Move high-rate observation to localhost so the phone has one push stream."""
+    """Move high-rate observation to localhost so the phone receives one push stream."""
     while not base.STOP.is_set():
         try:
             snap = observe_once()
