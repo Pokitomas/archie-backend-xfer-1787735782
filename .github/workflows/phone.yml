@@ -27,12 +27,20 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
+          import json,re
           s=Path('index.html').read_text(encoding='utf-8')
-          required=['/api/selftest','recoverForever','text-stream','screen.mjpg','applyScene','/api/pointer','liveStyle']
+          required=['/api/selftest','recoverForever','text-stream','screen.mjpg','applyScene','/api/pointer','liveStyle','loadStaticScene','audioQueue','kick()']
           assert all(x in s for x in required), [x for x in required if x not in s]
           assert 'vercel.app' not in s.lower()
           assert 'id="fallback"' not in s and 'id="retry"' not in s
+          assert 'id="dock"' not in s and '<button' not in s.lower()
+          scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
+          assert int(scene.get('revision',0)) >= 2
+          binds={x.get('bind') for x in scene.get('layers',[]) if isinstance(x,dict)}
+          assert {'reply.text','draft.text','voice.active'} <= binds
+          feat=scene.get('features',{})
+          for k in ['autoRecover','preserveDraftOffline','bufferVoiceOfflineSeconds','dragScroll','longPressRightClick']:
+              assert feat.get(k), k
           scripts=re.findall(r'<script>(.*?)</script>',s,re.S)
           assert len(scripts)==1
           Path('/tmp/phone.js').write_text(scripts[0],encoding='utf-8')
