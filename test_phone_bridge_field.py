@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import field_controller_adapters as adapters
 import phone_bridge as base
 import phone_bridge_field as field
 from field_transport import FieldTransport
@@ -85,6 +87,7 @@ class FieldBridgeContract(unittest.TestCase):
 
     def setUp(self):
         self.calls.clear()
+        adapters.reset_state()
         field.WIRE = FieldTransport(limit=128)
         field._CONTROLLER_KEY = None
         field._SCENE_KEY = None
@@ -94,8 +97,6 @@ class FieldBridgeContract(unittest.TestCase):
             field._PRESSURE_UNTIL = 0.0
             field._PRESSURE_STREAMS.clear()
             field._PRESSURE_ORDER.clear()
-        with field._CALL_LOCK:
-            field._CALLS.clear()
         with base.LOCK:
             base.SCENE.clear()
             base.SCENE.update({'revision': 7, 'css': '#root{}', 'layers': [], 'nodes': [], 'features': {'fieldProtocol': True}})
@@ -160,6 +161,22 @@ class FieldBridgeContract(unittest.TestCase):
         self.assertEqual(events[0]['payload']['anything'], [1, 2, 3])
         self.assertEqual(events[1]['channel'], 'future.sensor.receipt')
 
+    def test_generic_binary_metadata_survives_without_field_semantics(self):
+        meta = {'future': {'axis': 3}, 'rate': 12345}
+        packed = base64.b64encode(json.dumps(meta).encode()).decode()
+        headers = {
+            'Content-Type': 'application/octet-stream',
+            'X-Field-Channel': 'future.binary',
+            'X-Field-Shape': 'application/x-opaque',
+            'X-Field-Stream': 'future-a',
+            'X-Field-Meta': packed,
+        }
+        with self.req('/api/field', method='POST', raw=b'opaque bytes', headers=headers) as r:
+            self.assertEqual(r.status, 202)
+        ingress = field.WIRE.replay()['events'][0]
+        self.assertEqual(ingress['meta']['future']['axis'], 3)
+        self.assertEqual(ingress['meta']['rate'], 12345)
+
     def test_text_edits_cross_field_immediately_but_only_final_commits_controller(self):
         partial = {'channel': 'user.primary', 'shape': 'utf8', 'stream': 'turn-x', 'revision': 1, 'final': False, 'payload': {'value': 'hi'}}
         with self.req('/api/field', method='POST', value=partial) as r:
@@ -223,12 +240,12 @@ class FieldBridgeContract(unittest.TestCase):
         req = Request(f'http://127.0.0.1:{self.port}/api/field', method='OPTIONS', headers={
             'Origin': 'https://example.test',
             'Access-Control-Request-Method': 'POST',
-            'Access-Control-Request-Headers': 'authorization,content-type,x-field-shape,x-field-preview',
+            'Access-Control-Request-Headers': 'authorization,content-type,x-field-shape,x-field-meta',
         })
         with urlopen(req, timeout=2) as r:
             allowed = r.headers.get('Access-Control-Allow-Headers', '')
         self.assertIn('X-Field-Shape', allowed)
-        self.assertIn('X-Field-Preview', allowed)
+        self.assertIn('X-Field-Meta', allowed)
 
     def test_unauthorized_field_is_closed(self):
         with self.assertRaises(HTTPError) as cm:
