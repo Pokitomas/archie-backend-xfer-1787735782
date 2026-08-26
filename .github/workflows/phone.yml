@@ -1,0 +1,43 @@
+name: phone-field
+on:
+  push:
+    branches: [master]
+    paths:
+      - index.html
+      - phone_bridge.py
+      - .github/workflows/phone.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m py_compile phone_bridge.py
+      - run: python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          assert 'text-stream' in s and 'screen.mjpg' in s and 'liveStyle' in s
+          assert 'vercel.app' not in s.lower()
+          print('phone field static contract ok', len(s))
+          PY
+  pages:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
