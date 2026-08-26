@@ -11,8 +11,15 @@ jobs:
         shell: bash
         run: |
           set -x
-          curl -sS -i --max-time 25 \
-            -X POST \
-            -H 'content-type: application/json' \
-            --data '{}' \
-            'https://archie-gpt56-live-controller.vercel.app/api' || true
+          for u in \
+            'https://archie-gpt56-live-controller.vercel.app/api/index' \
+            'https://archie-gpt56-live-controller.vercel.app/api' \
+            'https://archie-gpt56-live-controller.vercel.app/'; do
+            echo "=== $u ==="
+            curl -sS -i --max-time 25 \
+              -X POST \
+              -H 'content-type: application/json' \
+              --data '{}' \
+              "$u" || true
+            echo
+          done
