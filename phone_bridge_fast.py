@@ -92,8 +92,8 @@ def _maybe_arm_default_chat(seat: dict) -> None:
     source = str(latest.get('source') or '').strip().lower()
     if source not in _DEFAULT_CHAT_SOURCES or seq == _LAST_DEFAULT_CHAT_SEQ:
         return
-    _LAST_DEFAULT_CHAT_SEQ = seq
-    _arm_entry_pressure()
+    if _arm_entry_pressure():
+        _LAST_DEFAULT_CHAT_SEQ = seq
 
 
 def _response_id(reply: dict):
