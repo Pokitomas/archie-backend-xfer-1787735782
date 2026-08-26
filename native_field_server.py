@@ -17,12 +17,15 @@ ROOT = Path(__file__).resolve().parent
 STATIC = {
     '/': ('native_index.html', 'text/html; charset=utf-8'),
     '/index.html': ('native_index.html', 'text/html; charset=utf-8'),
+    '/field-kernel.js': ('field_kernel.js', 'text/javascript; charset=utf-8'),
+    '/field-surface.js': ('field_surface.js', 'text/javascript; charset=utf-8'),
+    '/field-ios.js': ('field_ios_adapter.js', 'text/javascript; charset=utf-8'),
     '/field.js': ('native_field_client.js', 'text/javascript; charset=utf-8'),
 }
 
 
 class NativeFieldHandler(entry.EntryFieldHandler):
-    server_version = 'ArchieNativeField/1'
+    server_version = 'ArchieNativeField/2'
 
     def _static(self, path: str) -> bool:
         item = STATIC.get(path)
@@ -95,7 +98,7 @@ def load_local_scene() -> None:
         base.STOP.wait(.35)
 
 
-def _announce(public_url: str, token: str) -> None:
+def _announce(public_url: str, *, controller_ready: bool) -> None:
     if not public_url:
         return
     clean = public_url.rstrip('/')
@@ -105,12 +108,30 @@ def _announce(public_url: str, token: str) -> None:
         base.BUS['event'] = 'native-direct:' + clean
         base.BUS['transport_revision'] = int(base.BUS.get('transport_revision') or 0) + 1
     field._append(
+        'machine.readiness',
+        shape='application/vnd.archie.readiness+json',
+        payload={
+            'ready': bool(controller_ready),
+            'controller': bool(controller_ready),
+            'field_stream': True,
+            'mcp': True,
+            'surface': True,
+            'screen': bool((base.SELFTEST or {}).get('ok')),
+            'tls': True,
+            'transport': 'native-direct-https',
+            'hosted_relay': False,
+            'rendezvous': False,
+        },
+        final=True,
+        meta={'direction': 'egress', 'authority': 'machine'},
+    )
+    field._append(
         'surface.endpoint',
         shape='application/vnd.archie.endpoint+json',
         payload={
             'url': clean,
-            'surface_url': clean + '/#t=' + token,
-            'mcp_url': clean + '/mcp?t=' + token,
+            'surface_path': '/',
+            'mcp_path': '/mcp',
             'transport': 'native-direct-https',
             'hosted_relay': False,
             'rendezvous': False,
@@ -163,9 +184,18 @@ def main() -> None:
     except Exception:
         pass
 
-    field.sample_controller(force=True)
-    field.project_aperture(force=True)
-    _announce(args.public_url, base.TOKEN)
+    controller_ready = False
+    try:
+        snap = field.sample_controller(force=True)
+        controller_ready = bool(snap.get('ok'))
+        field.project_aperture(force=True)
+    except Exception:
+        controller_ready = False
+    if not controller_ready:
+        server.shutdown(); server.server_close()
+        raise SystemExit(4)
+
+    _announce(args.public_url, controller_ready=controller_ready)
     threading.Thread(target=load_local_scene, name='archie-native-scene', daemon=True).start()
     threading.Thread(target=field.controller_observer, name='archie-native-controller-field', daemon=True).start()
     print(f'ARCHIE NATIVE FIELD https://{args.host}:{args.port}', flush=True)
