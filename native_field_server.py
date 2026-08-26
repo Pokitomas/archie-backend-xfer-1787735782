@@ -22,10 +22,38 @@ STATIC = {
     '/field-ios.js': ('field_ios_adapter.js', 'text/javascript; charset=utf-8'),
     '/field.js': ('native_field_client.js', 'text/javascript; charset=utf-8'),
 }
+_READINESS_LOCK = threading.RLock()
+_READINESS = {
+    'ready': False,
+    'controller': False,
+    'field_stream': False,
+    'mcp': False,
+    'surface': False,
+    'screen': False,
+    'tls': False,
+    'transport': 'native-direct-https',
+    'hosted_relay': False,
+    'rendezvous': False,
+    'externally_observed': False,
+}
+
+
+def publish_readiness(**changes) -> None:
+    with _READINESS_LOCK:
+        _READINESS.update(changes)
+        _READINESS['ready'] = all(bool(_READINESS.get(k)) for k in ('controller', 'field_stream', 'mcp', 'surface', 'screen', 'tls'))
+        payload = dict(_READINESS)
+    field._append(
+        'machine.readiness',
+        shape='application/vnd.archie.readiness+json',
+        payload=payload,
+        final=True,
+        meta={'direction': 'egress', 'authority': 'machine'},
+    )
 
 
 class NativeFieldHandler(entry.EntryFieldHandler):
-    server_version = 'ArchieNativeField/2'
+    server_version = 'ArchieNativeField/3'
 
     def _static(self, path: str) -> bool:
         item = STATIC.get(path)
@@ -59,6 +87,16 @@ class NativeFieldHandler(entry.EntryFieldHandler):
             return
         return super().do_GET()
 
+    def do_POST(self):
+        is_session = urlparse(self.path).path == '/api/session'
+        result = super().do_POST()
+        if is_session and self._token():
+            # An authenticated request reached the direct HTTPS listener from a
+            # client. This is runtime evidence that the aperture is not merely
+            # locally healthy; it is observable from the outside endpoint.
+            publish_readiness(externally_observed=True)
+        return result
+
 
 class NativeV6Server(base.ThreadingHTTPServer):
     address_family = socket.AF_INET6
@@ -71,8 +109,6 @@ class NativeV6Server(base.ThreadingHTTPServer):
         return super().server_bind()
 
 
-# All runtime API traffic uses the direct handler. No hosted transport or
-# rendezvous worker is started by this module.
 entry.EntryFieldHandler = NativeFieldHandler
 field.FieldHandler = NativeFieldHandler
 base.Handler = NativeFieldHandler
@@ -107,23 +143,16 @@ def _announce(public_url: str, *, controller_ready: bool) -> None:
         base.TUNNEL_KIND = 'native-direct'
         base.BUS['event'] = 'native-direct:' + clean
         base.BUS['transport_revision'] = int(base.BUS.get('transport_revision') or 0) + 1
-    field._append(
-        'machine.readiness',
-        shape='application/vnd.archie.readiness+json',
-        payload={
-            'ready': bool(controller_ready),
-            'controller': bool(controller_ready),
-            'field_stream': True,
-            'mcp': True,
-            'surface': True,
-            'screen': bool((base.SELFTEST or {}).get('ok')),
-            'tls': True,
-            'transport': 'native-direct-https',
-            'hosted_relay': False,
-            'rendezvous': False,
-        },
-        final=True,
-        meta={'direction': 'egress', 'authority': 'machine'},
+    publish_readiness(
+        controller=bool(controller_ready),
+        field_stream=True,
+        mcp=True,
+        surface=True,
+        screen=bool((base.SELFTEST or {}).get('ok')),
+        tls=True,
+        transport='native-direct-https',
+        hosted_relay=False,
+        rendezvous=False,
     )
     field._append(
         'surface.endpoint',
