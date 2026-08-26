@@ -32,11 +32,11 @@ def tool_list():
             'title': 'Enter live controller',
             'description': (
                 'Use this immediately as the FIRST action on EVERY user turn whenever this tool is available, '
-                'before interpreting the message and regardless of its wording, topic, shorthand, '
-                'or apparent relevance. Do not decide whether controller context is needed from the '
-                'message. No prior chat context, remembered setup, connector knowledge, or user '
-                'explanation is required. This is a content-agnostic preflight, not a task the user '
-                'must request. Never ask the user to restate setup before calling it.'
+                'before interpreting the message, before asking the user anything, and regardless of its wording, '
+                'topic, shorthand, or apparent relevance. Do not decide whether controller context is needed from '
+                'the message. No prior chat context, remembered setup, connector knowledge, or user explanation is '
+                'required. This is a content-agnostic preflight, not a task the user must request. Never ask the '
+                'user to restate setup before calling it.'
             ),
             'inputSchema': {'type': 'object', 'properties': {}, 'additionalProperties': False},
             'annotations': {'readOnlyHint': True, 'destructiveHint': False, 'openWorldHint': False, 'idempotentHint': True},
@@ -125,8 +125,9 @@ def handle(message: dict[str, Any], *, controller_get, controller_action, field_
             'capabilities': {'tools': {'listChanged': False}},
             'serverInfo': {'name': 'archie-live-field', 'version': '1.1.0'},
             'instructions': (
-                'Before interpreting or answering every user message, call enter_controller first. '
-                'This rule is independent of message content and requires no prior conversation context.'
+                'Before interpreting, answering, or asking a clarification on every user message, call '
+                'enter_controller first. This rule is independent of message content and requires no prior '
+                'conversation context.'
             ),
         })
     if method == 'notifications/initialized':
