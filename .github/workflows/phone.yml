@@ -12,12 +12,21 @@ on:
       - field_entry_server.py
       - field_mcp.py
       - field_transport.py
+      - native_aperture.py
+      - native_secret.py
+      - native_resident.py
+      - native_field_server.py
+      - native_index.html
+      - native_field_client.js
+      - field_acme.ps1
       - phone_scene.json
       - phone_selftest.py
       - test_phone_bridge_fast.py
       - test_phone_bridge_field.py
       - test_field_entry_server.py
       - test_field_mcp.py
+      - test_native_aperture.py
+      - test_native_resident.py
       - acoustic_field.py
       - test_acoustic_field.py
       - activity_field.py
@@ -37,7 +46,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Python syntax
-        run: python -m py_compile phone_bridge.py phone_bridge_fast.py phone_bridge_field.py field_entry_server.py field_mcp.py field_transport.py phone_selftest.py test_phone_bridge_fast.py test_phone_bridge_field.py test_field_entry_server.py test_field_mcp.py acoustic_field.py test_acoustic_field.py activity_field.py test_activity_field.py live_field.py test_live_field.py
+        run: python -m py_compile phone_bridge.py phone_bridge_fast.py phone_bridge_field.py field_entry_server.py field_mcp.py field_transport.py native_aperture.py native_secret.py native_resident.py native_field_server.py phone_selftest.py test_phone_bridge_fast.py test_phone_bridge_field.py test_field_entry_server.py test_field_mcp.py test_native_aperture.py test_native_resident.py acoustic_field.py test_acoustic_field.py activity_field.py test_activity_field.py live_field.py test_live_field.py
       - name: Bridge contract
         run: python phone_selftest.py
       - name: Fast bridge contract
@@ -50,6 +59,10 @@ jobs:
         run: python test_field_mcp.py
       - name: MCP HTTP aperture contract
         run: python test_field_entry_server.py
+      - name: Native network packet contract
+        run: python test_native_aperture.py
+      - name: Native resident contract
+        run: python test_native_resident.py
       - name: Acoustic adapter contract
         run: python test_acoustic_field.py
       - name: Activity adapter contract
@@ -85,7 +98,9 @@ jobs:
           assert "urlparse(self.path).path == '/mcp'" in entry
           assert "'name': 'enter_controller'" in mcp
           assert 'No prior chat context' in mcp
-          assert 'py_compile' in boot and 'run_selftest' in boot and 'candidate-refused' in boot and 'Wait-FieldHealth' in boot
+          assert 'EVERY user turn' in mcp and 'message_semantics_gate_entry' in mcp
+          assert 'py_compile' in boot and 'run_selftest' in boot and 'candidate-refused' in boot and 'Wait-Native' in boot
+          assert 'migration_transport_retired' in boot and 'Stop-HostedRuntime' in boot
           scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
           feat=scene.get('features',{})
           assert int(scene.get('revision',0)) >= 6
@@ -102,10 +117,27 @@ jobs:
           assert 'field.controller.activity.payload.items.0.label' in binds
           print('field contracts ok',len(html),len(js),len(field),len(core),len(entry),len(mcp))
           PY
+      - name: Native direct surface contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          native='\n'.join(Path(p).read_text(encoding='utf-8') for p in ['native_aperture.py','native_resident.py','native_field_server.py','native_index.html','native_field_client.js']).lower()
+          for bad in ['vercel.app','trycloudflare.com','cloudflared','ntfy.sh','tail1bf489','raw.githubusercontent.com','raw.githack']:
+              assert bad not in native,bad
+          html=Path('native_index.html').read_text(encoding='utf-8')
+          js=Path('native_field_client.js').read_text(encoding='utf-8')
+          assert html.lower().count('<button')==1
+          assert 'window.ARCHIE_FIELD' in js and '/api/field.ndjson' in js
+          assert '/api/pointer' not in js and 'speechSynthesis' not in js
+          print('native direct surface contract ok')
+          PY
       - name: Browser script syntax
-        run: node --check field_client.js
-      - name: Windows bootstrap syntax
+        run: |
+          node --check field_client.js
+          node --check native_field_client.js
+      - name: Windows migration and ACME syntax
         shell: pwsh
         run: |
           $null = [scriptblock]::Create((Get-Content -Raw field_bootstrap.ps1))
-          Write-Host 'bootstrap parse ok'
+          $null = [scriptblock]::Create((Get-Content -Raw field_acme.ps1))
+          Write-Host 'powershell parse ok'
