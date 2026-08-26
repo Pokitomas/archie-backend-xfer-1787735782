@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import mimetypes
-import os
+import socket
 import ssl
 import threading
-import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -57,6 +55,17 @@ class NativeFieldHandler(entry.EntryFieldHandler):
             self.sendb(204, b'', 'image/x-icon')
             return
         return super().do_GET()
+
+
+class NativeV6Server(base.ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except Exception:
+            pass
+        return super().server_bind()
 
 
 # All runtime API traffic uses the direct handler. No cloudflared/ntfy worker is
@@ -131,7 +140,8 @@ def main() -> None:
         raise SystemExit('TLS material missing')
 
     base.STOP.clear()
-    server = base.ThreadingHTTPServer((args.host, int(args.port)), NativeFieldHandler)
+    server_cls = NativeV6Server if ':' in args.host else base.ThreadingHTTPServer
+    server = server_cls((args.host, int(args.port)), NativeFieldHandler)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(str(cert), str(key))
