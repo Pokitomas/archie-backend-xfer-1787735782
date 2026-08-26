@@ -14,18 +14,11 @@ $stage = Join-Path $stagingRoot ([guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $stage | Out-Null
 
 $repo = 'Pokitomas/archie-backend-xfer-1787735782'
-$head = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent'='archie-field-bootstrap/1'; 'Cache-Control'='no-cache' } ('https://api.github.com/repos/' + $repo + '/commits/master?t=' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+$head = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent'='archie-field-bootstrap/2'; 'Cache-Control'='no-cache' } ('https://api.github.com/repos/' + $repo + '/commits/master?t=' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
 $sha = [string]$head.sha
 if ($sha.Length -lt 40) { throw 'could not resolve coherent repository head' }
 $raw = 'https://raw.githubusercontent.com/' + $repo + '/' + $sha + '/'
-$files = @(
-  'phone_bridge.py',
-  'phone_bridge_fast.py',
-  'phone_bridge_field.py',
-  'acoustic_field.py',
-  'activity_field.py',
-  'live_field.py'
-)
+$files = @('phone_bridge.py','phone_bridge_field.py','field_transport.py')
 
 function Start-FieldProcess([string]$dir, [string]$entryName) {
   $entry = Join-Path $dir $entryName
@@ -57,7 +50,6 @@ try {
   try {
     & py -3.12 -m py_compile @files
     if ($LASTEXITCODE -ne 0) { throw 'py_compile failed' }
-
     $probe = @"
 import json
 import phone_bridge as base
@@ -72,8 +64,8 @@ raise SystemExit(0 if value.get('ok') else 3)
   }
   finally { Pop-Location }
 
-  # Candidate is coherent, imports, compiles, and has passed the live
-  # controller + seat + screen preflight before the current process is touched.
+  # Only a coherent, importable candidate that already passed the real
+  # controller+screen probe can replace the current aperture.
   $backup = Join-Path $root 'previous'
   if (Test-Path $backup) { Remove-Item -Recurse -Force $backup }
   if (Test-Path $current) { Move-Item -Force $current $backup }
@@ -92,13 +84,13 @@ raise SystemExit(0 if value.get('ok') else 3)
     if (Test-Path $backup) {
       Remove-Item -Recurse -Force $current -ErrorAction SilentlyContinue
       Move-Item -Force $backup $current
-      $rollbackEntry = if (Test-Path (Join-Path $current 'phone_bridge_field.py')) { 'phone_bridge_field.py' } elseif (Test-Path (Join-Path $current 'phone_bridge_fast.py')) { 'phone_bridge_fast.py' } else { 'phone_bridge.py' }
+      $rollbackEntry = if (Test-Path (Join-Path $current 'phone_bridge_field.py')) { 'phone_bridge_field.py' } else { 'phone_bridge.py' }
       $null = Start-FieldProcess $current $rollbackEntry
     }
     throw 'candidate started but failed authenticated local health; rolled back'
   }
 
-  $state = [ordered]@{
+  [ordered]@{
     installed_at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     commit = $sha
     current = $current
@@ -106,22 +98,18 @@ raise SystemExit(0 if value.get('ok') else 3)
     pid = $proc.Id
     files = $files
     status = 'healthy'
-  }
-  $state | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 (Join-Path $root 'state.json')
+  } | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 (Join-Path $root 'state.json')
 
-  # Keep only current/previous plus the newest refused candidate evidence.
   Get-ChildItem $stagingRoot -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -ne $stage } |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 catch {
   try { if (Test-Path $stage) { Remove-Item -Recurse -Force $stage } } catch {}
-  $failure = [ordered]@{
+  [ordered]@{
     failed_at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     commit = $sha
     status = 'candidate-refused'
     error = $_.Exception.Message
-  }
-  $failure | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 (Join-Path $root 'last_failure.json')
+  } | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 (Join-Path $root 'last_failure.json')
   throw
 }
