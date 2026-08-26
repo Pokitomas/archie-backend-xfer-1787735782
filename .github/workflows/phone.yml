@@ -74,16 +74,18 @@ jobs:
           assert 'py_compile' in boot and 'run_selftest' in boot and 'candidate-refused' in boot and 'Wait-FieldHealth' in boot
           scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
           feat=scene.get('features',{})
-          assert int(scene.get('revision',0)) >= 5
+          assert int(scene.get('revision',0)) >= 6
           assert feat.get('fieldProtocol') is True
           assert feat.get('arbitraryChannels') is True
           assert feat.get('arbitraryShapes') is True
           assert feat.get('singleControl') is True
           assert feat.get('screenInteraction') is False
-          assert feat.get('outputAudioOnPhone') is False
+          assert feat.get('clientOutputActuation') is False
+          assert feat.get('boundedOfflinePayloads') is True
           binds={x.get('bind') for x in scene.get('layers',[]) if isinstance(x,dict)}
           assert 'field.controller.primary.payload.reply.text' in binds
           assert 'field.machine.state.payload.focus' in binds
+          assert 'field.controller.activity.payload.items.0.label' in binds
           print('field contracts ok',len(html),len(js),len(field),len(core))
           PY
       - name: Browser script syntax
