@@ -99,7 +99,7 @@ jobs:
           assert html.lower().count('<button') == 1
           assert 'id="fallback"' not in html and 'id="retry"' not in html and 'id="dock"' not in html
           assert 'ARCHIE_FIELD_CORE' in kernel and '/api/field.ndjson' in kernel and '/api/field' in kernel
-          assert 'ARCHIE_FIELD_SURFACE' in surface
+          assert 'ARCHIE_FIELD_SURFACE' in surface and 'd.last' in surface and 'd.pick' in surface
           assert 'ARCHIE_FIELD_ADAPTER' in adapter
           assert 'field_bootstrap.ps1' in client and 'native cutover not announced' in client
           assert 'vercel.app' not in (html+client+kernel+surface+adapter).lower()
@@ -134,7 +134,7 @@ jobs:
 
           scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
           feat=scene.get('features',{})
-          assert int(scene.get('revision',0)) >= 6
+          assert int(scene.get('revision',0)) >= 7
           assert feat.get('fieldProtocol') is True
           assert feat.get('arbitraryChannels') is True
           assert feat.get('arbitraryShapes') is True
@@ -142,6 +142,16 @@ jobs:
           assert feat.get('screenInteraction') is False
           assert feat.get('clientOutputActuation') is False
           assert feat.get('boundedOfflinePayloads') is True
+          assert feat.get('sceneSelectsCanonicalState') is True
+          assert feat.get('decorativeGeometry') is False
+          assert scene.get('nodes') == []
+          layers={x.get('id'):x for x in scene.get('layers',[]) if isinstance(x,dict)}
+          assert layers['primary'].get('bind') == 'field.controller.state.payload.sensors.seat.reply.text'
+          assert layers['focus'].get('bind') == 'field.controller.state.payload.field.field.title'
+          for lid,pick in [('phase','phase'),('action','action'),('intent','intent')]:
+              assert layers[lid].get('bind') == 'field.controller.state.payload.events'
+              assert layers[lid].get('last') is True
+              assert layers[lid].get('pick') == pick
           print('field contracts ok',len(html),len(kernel),len(surface),len(adapter),len(client),len(field))
           PY
       - name: Native direct surface contract
@@ -161,6 +171,7 @@ jobs:
           assert 'location.origin' in client and 'ARCHIE_FIELD_ENDPOINT' in client
           assert '/api/field.ndjson' not in client
           assert 'machine.readiness' in server and "'hosted_relay': False" in server
+          assert 'externally_observed' in server and 'publish_readiness' in server
           assert '/api/pointer' not in native and 'speechSynthesis' not in native
           print('native direct surface contract ok')
           PY
