@@ -19,21 +19,15 @@ class ActivityField:
     """Small render-neutral ledger for what the controller is doing.
 
     This is intentionally passive. It mirrors controller/PC activity so the
-    phone can show coding and actions while the one-button + text interaction
-    remains unchanged. Streaming reply revisions are deliberately coalesced;
-    the reply plane already owns token-by-token immediacy.
+    field can show coding and actions without becoming another control surface.
+    Streaming reply revisions are deliberately coalesced; the primary field
+    owns token-by-token immediacy.
     """
 
     def __init__(self, limit: int = 160):
         self._seq = 0
         self._items = deque(maxlen=max(24, int(limit)))
-        self._last = {
-            'occupant': None,
-            'input_seq': None,
-            'reply_key': None,
-            'focus': None,
-            'bus_event': None,
-        }
+        self._last = {'occupant': None, 'input_seq': None, 'reply_key': None, 'focus': None, 'bus_event': None}
 
     @property
     def serial(self) -> int:
@@ -75,8 +69,6 @@ class ActivityField:
         reply = seat.get('reply') if isinstance(seat.get('reply'), dict) else {}
         seq = reply.get('seq', seat.get('output_seq'))
         status = 'fault' if reply.get('fault') else 'aborted' if reply.get('aborted') else 'done' if reply.get('done') else 'stream'
-        # Revision/char-count changes do not belong in this plane. Emit reply
-        # start once and then only semantic terminal-state changes.
         reply_key = (seq, status, str(reply.get('fault') or '')[:120])
         if seq is not None and reply_key != self._last['reply_key']:
             self._last['reply_key'] = reply_key
@@ -114,7 +106,8 @@ class ActivityField:
 
     def snapshot(self, limit: int = 18) -> dict:
         n = max(1, min(80, int(limit)))
-        return {'serial': self._seq, 'items': [asdict(x) for x in list(self._items)[-n:]]}
+        newest_first = list(reversed(list(self._items)[-n:]))
+        return {'serial': self._seq, 'items': [asdict(x) for x in newest_first]}
 
     @staticmethod
     def _clean(value, limit: int) -> str:
