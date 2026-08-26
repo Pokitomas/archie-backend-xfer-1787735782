@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import ctypes
 import io
 import json
+import os
+import subprocess
 import threading
 import time
 from collections import deque
@@ -9,6 +12,7 @@ from urllib.parse import urlparse
 
 import phone_bridge as base
 from acoustic_field import AcousticField
+from activity_field import ActivityField
 
 
 FAST_LOCK = threading.RLock()
@@ -30,6 +34,15 @@ _ENTRY_STREAMS: set[str] = set()
 _ENTRY_STREAM_CAP = 256
 _LAST_DEFAULT_CHAT_SEQ = -1
 _DEFAULT_CHAT_SOURCES = {'default-chat', 'default_chat', 'chatgpt-default', 'chatgpt'}
+
+# Separate passive activity plane. It never competes with reply/text/audio paths.
+ACTIVITY_LOCK = threading.RLock()
+ACTIVITY_COND = threading.Condition(ACTIVITY_LOCK)
+ACTIVITY = ActivityField(limit=192)
+_FOCUS_NEXT = 0.0
+_FOCUS_CACHE = ''
+_SESSION_NOTICE_LOCK = threading.RLock()
+_SESSION_NOTICED = False
 
 
 def _text_active() -> bool:
@@ -112,6 +125,110 @@ def _revision(reply: dict) -> int:
     return 0
 
 
+def _foreground_title() -> str:
+    if os.name != 'nt':
+        return ''
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return ''
+        n = user32.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(max(2, n + 1))
+        user32.GetWindowTextW(hwnd, buf, len(buf))
+        return ' '.join(buf.value.split())[:180]
+    except Exception:
+        return ''
+
+
+def _pc_state(seat: dict | None = None) -> dict:
+    seat = seat or base.safe_seat()
+    with ACTIVITY_LOCK:
+        focus = _FOCUS_CACHE
+    return {
+        'focus': focus,
+        'active_occupant': seat.get('active_occupant'),
+        'input_seq': seat.get('input_seq'),
+        'output_seq': seat.get('output_seq'),
+        'geometry': base.screen_geometry(),
+    }
+
+
+def _activity_observe(seat: dict) -> None:
+    global _FOCUS_NEXT, _FOCUS_CACHE
+    now = time.monotonic()
+    if now >= _FOCUS_NEXT:
+        _FOCUS_NEXT = now + 0.11
+        title = _foreground_title()
+        if title:
+            _FOCUS_CACHE = title
+    with base.LOCK:
+        bus_event = str(base.BUS.get('event') or '')
+    with ACTIVITY_COND:
+        before = ACTIVITY.serial
+        ACTIVITY.observe(seat, focus=_FOCUS_CACHE, bus_event=bus_event)
+        if ACTIVITY.serial != before:
+            ACTIVITY_COND.notify_all()
+
+
+def _record_action(payload: dict, result: dict | None = None) -> None:
+    with ACTIVITY_COND:
+        before = ACTIVITY.serial
+        ACTIVITY.record_action(payload, result)
+        if ACTIVITY.serial != before:
+            ACTIVITY_COND.notify_all()
+
+
+def activity_snapshot(limit: int = 18) -> dict:
+    seat = base.safe_seat()
+    with ACTIVITY_LOCK:
+        snap = ACTIVITY.snapshot(limit=limit)
+    snap['pc'] = _pc_state(seat)
+    return snap
+
+
+def desktop_notice(text: str = 'LISTENING') -> bool:
+    """Non-focus-stealing Windows presence pulse; no extra runtime dependency."""
+    if os.name != 'nt':
+        return False
+    label = ''.join(c for c in str(text or 'LISTENING') if c.isalnum() or c in ' ._/-')[:42] or 'LISTENING'
+    script = rf"""
+Add-Type -AssemblyName PresentationFramework
+$w=New-Object Windows.Window
+$w.WindowStyle='None';$w.ResizeMode='NoResize';$w.AllowsTransparency=$true
+$w.Background=[Windows.Media.Brushes]::Transparent;$w.Topmost=$true;$w.ShowInTaskbar=$false;$w.ShowActivated=$false
+$w.Width=238;$w.Height=46
+$wa=[Windows.SystemParameters]::WorkArea;$w.Left=$wa.Right-$w.Width-20;$w.Top=$wa.Top+20
+$b=New-Object Windows.Controls.Border;$b.Background=[Windows.Media.BrushConverter]::new().ConvertFrom('#E607090B')
+$b.CornerRadius=New-Object Windows.CornerRadius(5);$b.BorderBrush=[Windows.Media.BrushConverter]::new().ConvertFrom('#38FFFFFF');$b.BorderThickness=New-Object Windows.Thickness(1)
+$t=New-Object Windows.Controls.TextBlock;$t.Text='{label}';$t.Foreground=[Windows.Media.BrushConverter]::new().ConvertFrom('#E8F1F3F4');$t.FontFamily='Consolas';$t.FontSize=12;$t.VerticalAlignment='Center';$t.HorizontalAlignment='Center';$t.LetterSpacing=1
+$b.Child=$t;$w.Content=$b
+$timer=New-Object Windows.Threading.DispatcherTimer;$timer.Interval=[TimeSpan]::FromMilliseconds(820);$timer.Add_Tick({{$timer.Stop();$w.Close()}})
+$w.Add_ContentRendered({{$timer.Start()}});$null=$w.ShowDialog()
+"""
+    try:
+        subprocess.Popen(
+            ['powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _notice_listening_once() -> None:
+    global _SESSION_NOTICED
+    with _SESSION_NOTICE_LOCK:
+        if _SESSION_NOTICED:
+            return
+        _SESSION_NOTICED = True
+    desktop_notice('LISTENING')
+    with ACTIVITY_COND:
+        ACTIVITY.push('presence', 'listening', 'controller + phone field', status='live', source='windows')
+        ACTIVITY_COND.notify_all()
+
+
 def _append_gestures_locked(items):
     changed = False
     for item in items or ():
@@ -170,6 +287,7 @@ def observe_once(seat: dict | None = None):
     global _LAST_RESPONSE_ID
     seat = dict(seat or base.safe_seat())
     _maybe_arm_default_chat(seat)
+    _activity_observe(seat)
     reply = dict(seat.get('reply') or {})
     response_id = _response_id(reply)
     text_active = _text_active()
@@ -223,7 +341,7 @@ def observer_worker():
 
 
 class FastHandler(base.Handler):
-    server_version = 'ArchiePhoneFast/2'
+    server_version = 'ArchiePhoneFast/3'
 
     def _ndjson(self, value: dict):
         self.wfile.write(base._json_bytes(value) + b'\n')
@@ -243,8 +361,37 @@ class FastHandler(base.Handler):
             scene = dict(base.SCENE)
         return {
             'ok': True, 'seat': seat, 'bus': bus, 'event': bus.get('event'), 'scene': scene,
-            'geometry': base.screen_geometry(), 'selftest': base.SELFTEST, 'at': time.time(),
+            'geometry': base.screen_geometry(), 'selftest': base.SELFTEST,
+            'activity': activity_snapshot(limit=12), 'at': time.time(),
         }
+
+    def _activity_stream(self):
+        self._headers(200, 'application/x-ndjson; charset=utf-8', None)
+        self.send_header('Connection', 'close')
+        self.send_header('X-Accel-Buffering', 'no')
+        self.end_headers()
+        serial = -1
+        last_heartbeat = 0.0
+        try:
+            while not base.STOP.is_set():
+                with ACTIVITY_COND:
+                    current = ACTIVITY.serial
+                    now = time.time()
+                    if current == serial and now - last_heartbeat < 8.0:
+                        ACTIVITY_COND.wait(timeout=0.65)
+                        continue
+                    snap = ACTIVITY.snapshot(limit=18)
+                current = int(snap.get('serial') or 0)
+                now = time.time()
+                if current != serial:
+                    snap['pc'] = _pc_state()
+                    self._ndjson({'type': 'activity', **snap})
+                    serial = current
+                elif now - last_heartbeat >= 8.0:
+                    self._ndjson({'type': 'heartbeat', 'serial': serial, 'at': now})
+                last_heartbeat = now
+        except Exception:
+            pass
 
     def do_GET(self):
         path = urlparse(self.path).path
@@ -278,6 +425,18 @@ class FastHandler(base.Handler):
             except Exception:
                 pass
             return
+        if path == '/api/activity.ndjson':
+            if not self._token():
+                self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
+                return
+            self._activity_stream()
+            return
+        if path == '/api/activity':
+            if not self._token():
+                self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
+                return
+            self.sendb(200, base._json_bytes({'ok': True, **activity_snapshot(limit=24)}))
+            return
         if path == '/api/acoustic':
             if not self._token():
                 self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
@@ -294,6 +453,10 @@ class FastHandler(base.Handler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == '/api/session':
+            if self._token() and base.SELFTEST.get('ok'):
+                _notice_listening_once()
+            return super().do_POST()
         if path == '/api/text-stream':
             if not self._token():
                 self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
@@ -337,6 +500,23 @@ class FastHandler(base.Handler):
                 return
             snap = set_voice_active(active)
             self.sendb(200, base._json_bytes({'ok': True, **snap}))
+            return
+        if path == '/api/action':
+            if not self._token():
+                self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
+                return
+            n = min(4_000_000, int(self.headers.get('Content-Length') or 0))
+            raw = self.rfile.read(n) if n else b''
+            try:
+                value = json.loads(raw.decode('utf-8', 'replace') or '{}')
+            except Exception:
+                value = {}
+            if not isinstance(value, dict) or not value.get('action'):
+                self.sendb(400, b'{"ok":false,"error":"action"}')
+                return
+            result = base.controller_action(value)
+            _record_action(value, result)
+            self.sendb(200, base._json_bytes({'ok': True, 'result': result}))
             return
         return super().do_POST()
 
