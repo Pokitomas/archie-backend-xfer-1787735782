@@ -23,11 +23,11 @@ $sha = [string]$head.sha
 if ($sha.Length -lt 40) { throw 'could not resolve coherent migration snapshot' }
 $raw = 'https://raw.githubusercontent.com/' + $repo + '/' + $sha + '/'
 $files = @(
-  'phone_bridge.py','phone_bridge_field.py','field_protocol.py','field_transport.py','field_mcp.py','field_entry_server.py',
+  'phone_bridge.py','phone_bridge_field.py','field_controller_adapters.py','field_protocol.py','field_transport.py','field_mcp.py','field_entry_server.py',
   'native_aperture.py','native_secret.py','native_resident.py','native_field_server.py',
   'field_acme.ps1','native_index.html','native_field_client.js','field_kernel.js','field_surface.js','field_ios_adapter.js','phone_scene.json'
 )
-$pyFiles = @('phone_bridge.py','phone_bridge_field.py','field_protocol.py','field_transport.py','field_mcp.py','field_entry_server.py','native_aperture.py','native_secret.py','native_resident.py','native_field_server.py')
+$pyFiles = @('phone_bridge.py','phone_bridge_field.py','field_controller_adapters.py','field_protocol.py','field_transport.py','field_mcp.py','field_entry_server.py','native_aperture.py','native_secret.py','native_resident.py','native_field_server.py')
 
 function Start-LegacyProcess([string]$dir) {
   $entryName = if (Test-Path (Join-Path $dir 'phone_bridge_field.py')) { 'phone_bridge_field.py' } else { 'phone_bridge.py' }
@@ -109,7 +109,7 @@ try {
 import json
 import phone_bridge as base
 import phone_bridge_field
-import field_protocol, field_transport, field_mcp, native_aperture, native_resident, native_field_server
+import field_controller_adapters, field_protocol, field_transport, field_mcp, native_aperture, native_resident, native_field_server
 base.TOKEN = 'x' * 40
 value = base.run_selftest()
 print(json.dumps(value, separators=(',', ':')))
