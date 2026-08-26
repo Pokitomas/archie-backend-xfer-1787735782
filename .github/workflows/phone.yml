@@ -9,10 +9,15 @@ on:
       - phone_bridge.py
       - phone_bridge_fast.py
       - phone_bridge_field.py
+      - field_entry_server.py
+      - field_mcp.py
+      - field_transport.py
       - phone_scene.json
       - phone_selftest.py
       - test_phone_bridge_fast.py
       - test_phone_bridge_field.py
+      - test_field_entry_server.py
+      - test_field_mcp.py
       - acoustic_field.py
       - test_acoustic_field.py
       - activity_field.py
@@ -32,7 +37,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Python syntax
-        run: python -m py_compile phone_bridge.py phone_bridge_fast.py phone_bridge_field.py phone_selftest.py test_phone_bridge_fast.py test_phone_bridge_field.py acoustic_field.py test_acoustic_field.py activity_field.py test_activity_field.py live_field.py test_live_field.py
+        run: python -m py_compile phone_bridge.py phone_bridge_fast.py phone_bridge_field.py field_entry_server.py field_mcp.py field_transport.py phone_selftest.py test_phone_bridge_fast.py test_phone_bridge_field.py test_field_entry_server.py test_field_mcp.py acoustic_field.py test_acoustic_field.py activity_field.py test_activity_field.py live_field.py test_live_field.py
       - name: Bridge contract
         run: python phone_selftest.py
       - name: Fast bridge contract
@@ -41,6 +46,10 @@ jobs:
         run: python test_live_field.py
       - name: Field bridge contract
         run: python test_phone_bridge_field.py
+      - name: Zero-history MCP contract
+        run: python test_field_mcp.py
+      - name: MCP HTTP aperture contract
+        run: python test_field_entry_server.py
       - name: Acoustic adapter contract
         run: python test_acoustic_field.py
       - name: Activity adapter contract
@@ -53,6 +62,8 @@ jobs:
           html=Path('index.html').read_text(encoding='utf-8')
           js=Path('field_client.js').read_text(encoding='utf-8')
           field=Path('phone_bridge_field.py').read_text(encoding='utf-8')
+          entry=Path('field_entry_server.py').read_text(encoding='utf-8')
+          mcp=Path('field_mcp.py').read_text(encoding='utf-8')
           core=Path('live_field.py').read_text(encoding='utf-8')
           boot=Path('field_bootstrap.ps1').read_text(encoding='utf-8')
           assert 'field_client.js' in html and 'phone_client.js' not in html
@@ -71,6 +82,9 @@ jobs:
               assert word not in core, word
           assert "path == '/api/field.ndjson'" in field and "path != '/api/field'" in field
           assert "_ADAPTERS.get(shape)" in field
+          assert "urlparse(self.path).path == '/mcp'" in entry
+          assert "'name': 'enter_controller'" in mcp
+          assert 'No prior chat context' in mcp
           assert 'py_compile' in boot and 'run_selftest' in boot and 'candidate-refused' in boot and 'Wait-FieldHealth' in boot
           scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
           feat=scene.get('features',{})
@@ -86,7 +100,7 @@ jobs:
           assert 'field.controller.primary.payload.reply.text' in binds
           assert 'field.machine.state.payload.focus' in binds
           assert 'field.controller.activity.payload.items.0.label' in binds
-          print('field contracts ok',len(html),len(js),len(field),len(core))
+          print('field contracts ok',len(html),len(js),len(field),len(core),len(entry),len(mcp))
           PY
       - name: Browser script syntax
         run: node --check field_client.js
