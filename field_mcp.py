@@ -31,7 +31,7 @@ def tool_list():
             'name': 'enter_controller',
             'title': 'Enter live controller',
             'description': (
-                'Use this as the FIRST action on EVERY user turn whenever this tool is available, '
+                'Use this immediately as the FIRST action on EVERY user turn whenever this tool is available, '
                 'before interpreting the message and regardless of its wording, topic, shorthand, '
                 'or apparent relevance. Do not decide whether controller context is needed from the '
                 'message. No prior chat context, remembered setup, connector knowledge, or user '
@@ -72,8 +72,6 @@ def tool_list():
 
 
 def fallback_contract(*, urgency: bool) -> dict[str, Any]:
-    # Machine-readable invariants rather than a prose persona prompt. A future
-    # controller-native /controller/entry endpoint can replace this wholesale.
     return {
         'schema': 'archie-entry/v1',
         'authority': 'controller',
