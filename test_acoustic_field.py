@@ -85,6 +85,35 @@ class AcousticFieldTest(unittest.TestCase):
         self.assertTrue(all((p.end - p.start) >= 12 for p in phrases))
         self.assertTrue(all(text[p.end - 1].isspace() for p in phrases))
 
+    def test_supersede_cuts_old_response_and_starts_new_generation_cleanly(self):
+        clock = Clock()
+        f = AcousticField(min_chars=3, max_phrase_chars=30, clock_ns=clock)
+        old = f.observe('old phrase. unfinished tail', 4, done=False)
+        old_generation = next(x.generation for x in old if x.kind == 'phrase')
+        cut = f.supersede()
+        self.assertEqual([x.kind for x in cut], ['cut'])
+        self.assertEqual(cut[0].reason, 'response-superseded')
+        self.assertGreater(cut[0].generation, old_generation)
+        snap = f.snapshot()
+        self.assertEqual((snap['chars'], snap['primed_chars'], snap['emitted_chars']), (0, 0, 0))
+        new = f.observe('new phrase.', 0, done=True)
+        self.assertTrue(any(x.kind == 'phrase' for x in new))
+        self.assertTrue(all(x.generation == f.generation for x in new))
+
+    def test_supersede_while_user_active_keeps_new_response_silent(self):
+        clock = Clock()
+        f = AcousticField(min_chars=3, max_phrase_chars=30, resume_guard_ms=64, clock_ns=clock)
+        f.observe('old phrase.', 1, done=False)
+        f.set_user_active(True)
+        f.supersede()
+        out = f.observe('new phrase.', 0, done=True)
+        self.assertTrue(out)
+        self.assertTrue(all(x.kind == 'prime' for x in out))
+        f.set_user_active(False)
+        clock.ms(64)
+        resumed = f.advance()
+        self.assertTrue(any(x.kind == 'phrase' for x in resumed))
+
     def test_done_releases_without_voice_identity(self):
         f = AcousticField(min_chars=3, max_phrase_chars=50)
         out = f.observe('compact final', 1, done=True)
