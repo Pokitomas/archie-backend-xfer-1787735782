@@ -1,174 +1,252 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import threading
 import time
 from urllib.parse import parse_qs, urlparse
 
 import phone_bridge as base
-import phone_bridge_fast as fast
-from live_field import LiveField
+from field_transport import FieldTransport
 
 
-LIVE = LiveField(limit=1024)
+WIRE = FieldTransport(limit=1024)
 _ADAPTERS = {}
-_OBSERVER_STOP = threading.Event()
+_PRESSURE_SECONDS = 900.0
+_PRESSURE_LOCK = threading.RLock()
+_PRESSURE_UNTIL = 0.0
+_PRESSURE_STREAMS: set[str] = set()
+_PRESSURE_ORDER: list[str] = []
+_LAST_DEFAULT_CHAT_SEQ = -1
+_DEFAULT_CHAT_SOURCES = {'default-chat', 'default_chat', 'chatgpt-default', 'chatgpt'}
+_CONTROLLER_LOCK = threading.RLock()
+_CONTROLLER_KEY = None
+_CALL_LOCK = threading.RLock()
+_CALLS: dict[str, dict] = {}
+_PRESENCE_LOCK = threading.RLock()
+_PRESENCE_SHOWN = False
 
 
 def register_adapter(shape: str):
-    key = LiveField._shape(shape)
+    key = FieldTransport.shape(shape)
     def deco(fn):
         _ADAPTERS[key] = fn
         return fn
     return deco
 
 
-def _publish(channel: str, *, shape='opaque', payload=None, stream='', revision=0, final=False, meta=None):
-    return LIVE.publish(
-        channel,
-        shape=shape,
-        payload=payload,
-        stream=stream,
-        revision=revision,
-        final=final,
-        meta=meta or {},
+def _append(channel: str, *, shape='opaque', payload=None, stream='', revision=0, final=False, meta=None):
+    return WIRE.append(channel, shape=shape, payload=payload, stream=stream,
+                       revision=revision, final=final, meta=meta or {})
+
+
+def _result_ok(value) -> bool:
+    return isinstance(value, dict) and bool(value.get('ok', True)) and not value.get('error')
+
+
+def _urgent() -> bool:
+    with _PRESSURE_LOCK:
+        return time.monotonic() < _PRESSURE_UNTIL
+
+
+def _arm_pressure() -> bool:
+    """Concrete duration exists only below the remote/model-facing field."""
+    global _PRESSURE_UNTIL
+    try:
+        result = base.controller_action({
+            'action': 'timebox',
+            'seconds': _PRESSURE_SECONDS,
+            'label': 'entry-pressure',
+            'intent': 'automatic ingress pressure; expose urgency only',
+        })
+        ok = _result_ok(result)
+    except Exception:
+        ok = False
+    if ok:
+        with _PRESSURE_LOCK:
+            _PRESSURE_UNTIL = max(_PRESSURE_UNTIL, time.monotonic() + _PRESSURE_SECONDS)
+    return ok
+
+
+def _arm_stream(stream: str) -> bool:
+    sid = FieldTransport.stream(stream)
+    if not sid:
+        return _arm_pressure()
+    with _PRESSURE_LOCK:
+        if sid in _PRESSURE_STREAMS:
+            return True
+    if not _arm_pressure():
+        return False
+    with _PRESSURE_LOCK:
+        if sid not in _PRESSURE_STREAMS:
+            _PRESSURE_STREAMS.add(sid)
+            _PRESSURE_ORDER.append(sid)
+            while len(_PRESSURE_ORDER) > 256:
+                _PRESSURE_STREAMS.discard(_PRESSURE_ORDER.pop(0))
+    return True
+
+
+def _maybe_arm_default_chat(controller: dict) -> None:
+    global _LAST_DEFAULT_CHAT_SEQ
+    sensors = controller.get('sensors') if isinstance(controller.get('sensors'), dict) else {}
+    seat = sensors.get('seat') if isinstance(sensors.get('seat'), dict) else {}
+    latest = seat.get('latest_input') if isinstance(seat.get('latest_input'), dict) else {}
+    try:
+        seq = int(latest.get('seq'))
+    except Exception:
+        return
+    source = str(latest.get('source') or '').strip().lower()
+    if source not in _DEFAULT_CHAT_SOURCES or seq == _LAST_DEFAULT_CHAT_SEQ:
+        return
+    if _arm_pressure():
+        _LAST_DEFAULT_CHAT_SEQ = seq
+
+
+def _redact_temporal_secret(value, path=()):
+    """Keep normal event timestamps while removing the hidden pressure clock."""
+    if isinstance(value, list):
+        return [_redact_temporal_secret(v, path + ('[]',)) for v in value]
+    if not isinstance(value, dict):
+        return value
+    out = {}
+    for key, item in value.items():
+        k = str(key)
+        lower = k.lower()
+        if lower.startswith('timebox') or lower.startswith('remaining') or lower in {'deadline', 'deadline_ns'}:
+            continue
+        if lower == 'time' and ('seat' in path or 'body' in path or 'orientation' in path):
+            continue
+        out[k] = _redact_temporal_secret(item, path + (lower,))
+    return out
+
+
+def _controller_key(snap: dict):
+    sensors = snap.get('sensors') if isinstance(snap.get('sensors'), dict) else {}
+    seat = sensors.get('seat') if isinstance(sensors.get('seat'), dict) else {}
+    reply = seat.get('reply') if isinstance(seat.get('reply'), dict) else {}
+    field = snap.get('field') if isinstance(snap.get('field'), dict) else {}
+    front = field.get('field') if isinstance(field.get('field'), dict) else field.get('front') if isinstance(field.get('front'), dict) else {}
+    attention = snap.get('attention') if isinstance(snap.get('attention'), dict) else {}
+    events = snap.get('events') if isinstance(snap.get('events'), list) else []
+    last = events[-1] if events and isinstance(events[-1], dict) else {}
+    voice = seat.get('voice') if isinstance(seat.get('voice'), dict) else {}
+    return (
+        snap.get('run'), snap.get('activity'), snap.get('mutations'), snap.get('phase'), snap.get('receipt'),
+        field.get('basis'), field.get('cursor'), front.get('hwnd'), front.get('title'),
+        attention.get('seq'), seat.get('active_occupant'), seat.get('input_seq'), seat.get('output_seq'),
+        reply.get('seq'), reply.get('revision'), reply.get('done'), reply.get('aborted'), reply.get('fault'),
+        reply.get('sha256'), voice.get('seq'), seat.get('ack_seq'), last.get('seq'), last.get('phase'),
     )
 
 
-def _field_observer():
-    """Lift existing controller surfaces into one ordered field.
-
-    The loop observes adapters, not modalities. New producers can publish into
-    LIVE directly without changing this protocol or the phone transport.
-    """
-    last_reply_serial = -1
-    last_activity_serial = -1
-    last_scene_revision = -1
-    last_pc = None
-    while not base.STOP.is_set() and not _OBSERVER_STOP.is_set():
-        changed = False
-        try:
-            snap = fast.snapshot(diagnostics=False)
-            rs = int(snap.get('serial') or 0)
-            if rs != last_reply_serial:
-                last_reply_serial = rs
-                reply = dict(snap.get('reply') or {})
-                _publish(
-                    'controller.primary',
-                    shape='application/vnd.archie.controller-state+json',
-                    payload={
-                        'reply': reply,
-                        'seat': dict(snap.get('seat') or {}),
-                        'acoustic': dict(snap.get('acoustic') or {}),
-                    },
-                    stream=str(reply.get('stream_id') or ''),
-                    revision=reply.get('revision') or reply.get('seq') or 0,
-                    final=bool(reply.get('done')),
-                    meta={'direction': 'egress', 'source': 'controller'},
-                )
-                changed = True
-        except Exception:
-            pass
-        try:
-            act = fast.activity_snapshot(limit=24)
-            aser = int(act.get('serial') or 0)
-            if aser != last_activity_serial:
-                last_activity_serial = aser
-                _publish(
-                    'controller.activity',
-                    shape='application/vnd.archie.activity+json',
-                    payload={'items': act.get('items') or []},
-                    revision=aser,
-                    final=False,
-                    meta={'direction': 'egress', 'source': 'controller'},
-                )
-                changed = True
-            pc = act.get('pc') or {}
-            pc_key = json.dumps(pc, sort_keys=True, separators=(',', ':'), default=str)
-            if pc_key != last_pc:
-                last_pc = pc_key
-                _publish(
-                    'machine.state',
-                    shape='application/vnd.archie.machine-state+json',
-                    payload=pc,
-                    meta={'direction': 'egress', 'source': 'machine'},
-                )
-                changed = True
-        except Exception:
-            pass
-        try:
-            with base.LOCK:
-                scene = dict(base.SCENE)
-            rev = int(scene.get('revision') or 0)
-            if rev != last_scene_revision:
-                last_scene_revision = rev
-                _publish(
-                    'surface.scene',
-                    shape='application/vnd.archie.scene+json',
-                    payload=scene,
-                    revision=rev,
-                    meta={'direction': 'egress', 'source': 'surface'},
-                )
-                changed = True
-        except Exception:
-            pass
-        base.STOP.wait(0.018 if changed else 0.048)
+def sample_controller(*, force: bool = False) -> dict:
+    """Project the one canonical controller LiveField; never recreate it here."""
+    global _CONTROLLER_KEY
+    snap = base.jget('/controller', 1.6)
+    if not isinstance(snap, dict) or not snap.get('ok'):
+        raise RuntimeError('controller field unavailable')
+    _maybe_arm_default_chat(snap)
+    key = _controller_key(snap)
+    with _CONTROLLER_LOCK:
+        changed = force or key != _CONTROLLER_KEY
+        if changed:
+            _CONTROLLER_KEY = key
+    if changed:
+        public = _redact_temporal_secret(snap)
+        public['urgency'] = _urgent()
+        _append(
+            'controller.state',
+            shape='application/vnd.archie.controller-livefield+json',
+            payload=public,
+            revision=int(snap.get('activity') or 0),
+            final=False,
+            meta={'direction': 'egress', 'authority': 'controller'},
+        )
+    return snap
 
 
-def _result_ok(result) -> bool:
-    return isinstance(result, dict) and bool(result.get('ok', True)) and not result.get('error')
+def controller_observer():
+    while not base.STOP.is_set():
+        wait = .06
+        try:
+            snap = sample_controller()
+            sensors = snap.get('sensors') if isinstance(snap.get('sensors'), dict) else {}
+            seat = sensors.get('seat') if isinstance(sensors.get('seat'), dict) else {}
+            reply = seat.get('reply') if isinstance(seat.get('reply'), dict) else {}
+            wait = .012 if reply and not bool(reply.get('done')) else .045
+        except Exception:
+            wait = .14
+        base.STOP.wait(wait)
+
+
+def _show_presence_once() -> None:
+    global _PRESENCE_SHOWN
+    with _PRESENCE_LOCK:
+        if _PRESENCE_SHOWN:
+            return
+        _PRESENCE_SHOWN = True
+    try:
+        # Reuse the controller's own transient aperture instead of spawning a
+        # second Windows overlay/process just to say that the field is alive.
+        base.controller_action({
+            'action': 'undertow',
+            'text': '∴',
+            'ttl_ms': 1200,
+            'intent': 'remote field listening presence',
+        })
+    except Exception:
+        pass
+    _append('surface.presence', shape='application/vnd.archie.presence+json',
+            payload={'state': 'listening'}, meta={'direction': 'egress', 'authority': 'controller'})
 
 
 @register_adapter('utf8')
-def _adapt_utf8(event: dict, raw: bytes):
-    payload = event.get('payload')
-    if isinstance(payload, dict):
-        value = payload.get('value', '')
-    else:
-        value = payload if payload is not None else raw.decode('utf-8', 'replace')
-    text = str(value or '')
-    stream = str(event.get('stream') or '')[:120]
-    revision = max(0, int(event.get('revision') or 0))
-    final = bool(event.get('final'))
-    if not stream:
-        return {'ok': False, 'error': 'stream'}
-    if not fast._arm_text_stream(stream):
+def adapt_utf8(event: dict, raw: bytes):
+    stream = FieldTransport.stream(event.get('stream'))
+    if not _arm_stream(stream):
         return {'ok': False, 'error': 'entry_pressure'}
-    commit = False
-    with base.LOCK:
-        if stream != base.BUS.get('stream_id') or revision >= int(base.BUS.get('revision') or 0):
-            base.BUS.update({
-                'stream_id': stream,
-                'revision': revision,
-                'text': text,
-                'text_active': not final,
-                'updated': time.time(),
-                'event': 'field:live',
-            })
-            commit = final and bool(text) and revision > int(base.BUS.get('committed_revision') or 0)
-    result = {'ok': True, 'accepted': True, 'live': True, 'revision': revision}
-    if commit:
-        accepted = base.jpost('/phone/text', {'text': text}, 2.5)
-        with base.LOCK:
-            base.BUS['committed_revision'] = revision
-            base.BUS['event'] = 'field:commit'
-            base.BUS['text_active'] = False
-        result['controller'] = accepted
-        result['ok'] = _result_ok(accepted)
-    return result
+    payload = event.get('payload')
+    value = payload.get('value', '') if isinstance(payload, dict) else payload
+    text = str(value or '')
+    final = bool(event.get('final'))
+    if not final:
+        return {'ok': True, 'accepted': True, 'committed': False}
+    if not text or len(text) > 4000:
+        return {'ok': False, 'error': 'text_size'}
+    accepted = base.jpost('/phone/text', {
+        'text': text,
+        'client_sent_ms': (event.get('meta') or {}).get('client_sent_ms') if isinstance(event.get('meta'), dict) else None,
+        'bridge_received_ms': int(time.time() * 1000),
+    }, 2.5)
+    return {'ok': _result_ok(accepted), 'accepted': accepted, 'committed': True}
+
+
+@register_adapter('application/vnd.archie.contact+json')
+def adapt_contact(event: dict, raw: bytes):
+    stream = FieldTransport.stream(event.get('stream')) or 'contact'
+    payload = event.get('payload') if isinstance(event.get('payload'), dict) else {}
+    active = bool(payload.get('active'))
+    if active:
+        if not _arm_stream(stream):
+            return {'ok': False, 'error': 'entry_pressure'}
+        opened = base.jpost('/phone/audio/begin', {'client_started_ms': payload.get('client_started_ms')}, 2.0)
+        if not _result_ok(opened):
+            return {'ok': False, 'error': 'contact_begin', 'controller': opened}
+        with _CALL_LOCK:
+            _CALLS[stream] = {'call_id': str(opened.get('call_id') or ''), 'opened': time.monotonic()}
+        return {'ok': True, 'active': True, 'call_id': opened.get('call_id'), 'ack': opened.get('ack')}
+    with _CALL_LOCK:
+        current = dict(_CALLS.get(stream) or {})
+    return {'ok': True, 'active': False, 'call_id': current.get('call_id')}
 
 
 @register_adapter('audio/pcm;codec=s16le')
 @register_adapter('pcm_s16le')
-def _adapt_pcm(event: dict, raw: bytes):
-    if not fast._urgency() and not fast._arm_entry_pressure():
+def adapt_pcm(event: dict, raw: bytes):
+    stream = FieldTransport.stream(event.get('stream')) or 'contact'
+    if not _arm_stream(stream):
         return {'ok': False, 'error': 'entry_pressure'}
-    meta = event.get('meta') if isinstance(event.get('meta'), dict) else {}
-    try:
-        rate = max(8000, min(48000, int(meta.get('rate') or 16000)))
-    except Exception:
-        rate = 16000
     if not raw:
         payload = event.get('payload')
         if isinstance(payload, dict) and payload.get('base64'):
@@ -176,38 +254,45 @@ def _adapt_pcm(event: dict, raw: bytes):
                 raw = base64.b64decode(str(payload['base64']), validate=False)
             except Exception:
                 raw = b''
-    accepted = base.jpost('/phone/audio', {
+    if len(raw) < 6400 or len(raw) > 640000 or len(raw) % 2:
+        return {'ok': False, 'error': 'pcm_window', 'bytes': len(raw)}
+    meta = event.get('meta') if isinstance(event.get('meta'), dict) else {}
+    try:
+        rate = int(meta.get('rate') or 16000)
+    except Exception:
+        rate = 16000
+    with _CALL_LOCK:
+        call = dict(_CALLS.get(stream) or {})
+    call_id = str(meta.get('call_id') or call.get('call_id') or '')
+    preview = bool(meta.get('preview')) and not bool(event.get('final'))
+    path = '/phone/audio/preview' if preview else '/phone/audio'
+    body = {
         'sample_rate': rate,
         'pcm16_base64': base64.b64encode(raw).decode('ascii'),
-    }, 2.0)
-    with base.LOCK:
-        base.BUS['audio_seq'] = int(base.BUS.get('audio_seq') or 0) + 1
-        base.BUS['event'] = 'field:samples'
-    return {'ok': _result_ok(accepted), 'accepted': accepted}
-
-
-@register_adapter('application/vnd.archie.contact+json')
-def _adapt_contact(event: dict, raw: bytes):
-    payload = event.get('payload') if isinstance(event.get('payload'), dict) else {}
-    active = bool(payload.get('active'))
-    if active and not fast._arm_entry_pressure():
-        return {'ok': False, 'error': 'entry_pressure'}
-    snap = fast.set_voice_active(active)
-    return {'ok': True, 'active': active, 'serial': snap.get('serial')}
+        'call_id': call_id,
+    }
+    if isinstance(meta.get('speech_evidence'), bool):
+        body['speech_evidence'] = meta['speech_evidence']
+    accepted = base.jpost(path, body, 3.0)
+    if not preview and call_id:
+        with _CALL_LOCK:
+            _CALLS.pop(stream, None)
+    return {'ok': _result_ok(accepted), 'accepted': accepted, 'preview': preview, 'call_id': call_id}
 
 
 @register_adapter('application/vnd.archie.action+json')
-def _adapt_action(event: dict, raw: bytes):
+def adapt_action(event: dict, raw: bytes):
+    if not _arm_stream(FieldTransport.stream(event.get('stream'))):
+        return {'ok': False, 'error': 'entry_pressure'}
     payload = event.get('payload') if isinstance(event.get('payload'), dict) else {}
     if not payload.get('action'):
         return {'ok': False, 'error': 'action'}
     result = base.controller_action(payload)
-    fast._record_action(payload, result)
     return {'ok': _result_ok(result), 'result': result}
 
 
 @register_adapter('application/vnd.archie.scene+json')
-def _adapt_scene(event: dict, raw: bytes):
+def adapt_scene(event: dict, raw: bytes):
     value = event.get('payload') if isinstance(event.get('payload'), dict) else {}
     with base.LOCK:
         base.SCENE.clear()
@@ -218,27 +303,35 @@ def _adapt_scene(event: dict, raw: bytes):
     return {'ok': True, 'scene': out}
 
 
-class FieldHandler(fast.FastHandler):
-    server_version = 'ArchieLiveField/1'
+class FieldHandler(base.Handler):
+    server_version = 'ArchieField/2'
 
-    def _field_stream(self):
+    def _ndjson(self, value: dict):
+        self.wfile.write(base._json_bytes(value) + b'\n')
+        self.wfile.flush()
+
+    def _stream_field(self):
         self._headers(200, 'application/x-ndjson; charset=utf-8', None)
         self.send_header('Connection', 'close')
         self.send_header('X-Accel-Buffering', 'no')
         self.end_headers()
+        try:
+            sample_controller(force=True)
+        except Exception:
+            pass
         cursor = 0
         last_heartbeat = 0.0
         try:
-            initial = LIVE.snapshot(latest=True, limit=128)
+            initial = WIRE.replay(after=0, limit=192)
             cursor = int(initial.get('serial') or 0)
-            self._ndjson({'type': 'field', 'snapshot': True, **initial})
+            self._ndjson({'type': 'field', 'seeded_from': 'controller', **initial})
             last_heartbeat = time.time()
             while not base.STOP.is_set():
-                current = LIVE.wait_after(cursor, timeout=.75)
+                current = WIRE.wait_after(cursor, timeout=.75)
                 now = time.time()
                 if current > cursor:
-                    snap = LIVE.snapshot(after=cursor, limit=192)
-                    self._ndjson({'type': 'field', 'snapshot': False, **snap})
+                    snap = WIRE.replay(after=cursor, limit=192)
+                    self._ndjson({'type': 'field', **snap})
                     cursor = int(snap.get('serial') or cursor)
                     last_heartbeat = now
                 elif now - last_heartbeat >= 8.0:
@@ -253,7 +346,7 @@ class FieldHandler(fast.FastHandler):
             if not self._token():
                 self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
                 return
-            self._field_stream()
+            self._stream_field()
             return
         if path == '/api/field':
             if not self._token():
@@ -264,23 +357,21 @@ class FieldHandler(fast.FastHandler):
                 after = int((q.get('after') or ['0'])[0])
             except Exception:
                 after = 0
-            latest = str((q.get('latest') or ['0'])[0]).lower() in {'1', 'true', 'yes'}
-            self.sendb(200, base._json_bytes({'ok': True, **LIVE.snapshot(after=after, latest=latest)}))
+            try:
+                sample_controller(force=(after == 0))
+            except Exception:
+                pass
+            self.sendb(200, base._json_bytes({'ok': True, **WIRE.replay(after=after, limit=192)}))
             return
         return super().do_GET()
 
     def do_POST(self):
         path = urlparse(self.path).path
         if path == '/api/session':
+            result = super().do_POST()
             if self._token() and base.SELFTEST.get('ok'):
-                _publish(
-                    'surface.presence',
-                    shape='application/vnd.archie.presence+json',
-                    payload={'state': 'listening'},
-                    final=False,
-                    meta={'direction': 'egress', 'source': 'bridge'},
-                )
-            return super().do_POST()
+                _show_presence_once()
+            return result
         if path != '/api/field':
             return super().do_POST()
         if not self._token():
@@ -309,53 +400,45 @@ class FieldHandler(fast.FastHandler):
             }
             if self.headers.get('X-Field-Rate'):
                 event['meta']['rate'] = self.headers.get('X-Field-Rate')
+            if self.headers.get('X-Field-Preview'):
+                event['meta']['preview'] = str(self.headers.get('X-Field-Preview')).lower() in {'1', 'true', 'yes'}
             binary = raw
-        channel = str(event.get('channel') or 'user.primary')
-        shape = LiveField._shape(event.get('shape') or 'opaque')
-        stream = str(event.get('stream') or '')
-        revision = event.get('revision') or 0
+        channel = FieldTransport.channel(event.get('channel') or 'user.primary')
+        shape = FieldTransport.shape(event.get('shape') or 'opaque')
+        stream = FieldTransport.stream(event.get('stream') or '')
+        try:
+            revision = max(0, int(event.get('revision') or 0))
+        except Exception:
+            revision = 0
         final = bool(event.get('final'))
         meta = event.get('meta') if isinstance(event.get('meta'), dict) else {}
-        ingress = _publish(
-            channel,
-            shape=shape,
-            payload=binary if binary else event.get('payload'),
-            stream=stream,
-            revision=revision,
-            final=final,
-            meta={**meta, 'direction': 'ingress'},
-        )
+
+        # User-originated traffic cannot cross into the controller aperture
+        # without first arming hidden entry pressure, independent of shape.
+        if channel.startswith('user.') and not _arm_stream(stream):
+            self.sendb(503, b'{"ok":false,"error":"entry_pressure"}')
+            return
+
+        ingress = _append(channel, shape=shape, payload=binary if binary else event.get('payload'),
+                          stream=stream, revision=revision, final=final,
+                          meta={**meta, 'direction': 'ingress'})
         adapter = _ADAPTERS.get(shape)
-        adapted = False
+        adapted = adapter is not None
         result = {'ok': True, 'accepted': True, 'adapted': False}
         if adapter is not None:
-            adapted = True
             try:
                 result = adapter(event, binary)
                 if not isinstance(result, dict):
                     result = {'ok': True, 'value': result}
             except Exception as exc:
                 result = {'ok': False, 'error': f'{type(exc).__name__}: {exc}'}
-        _publish(
-            channel + '.receipt',
-            shape='application/vnd.archie.receipt+json',
-            payload={
-                'for_serial': ingress.serial,
-                'adapted': adapted,
-                'ok': bool(result.get('ok', True)) and not result.get('error'),
-                'error': result.get('error'),
-            },
-            stream=stream,
-            revision=revision,
-            final=True,
-            meta={'direction': 'egress', 'source': 'bridge'},
-        )
-        code = 202 if bool(result.get('ok', True)) and not result.get('error') else 503
-        self.sendb(code, base._json_bytes({
-            'ok': code < 400,
-            'field_serial': ingress.serial,
-            'adapted': adapted,
-            'result': result,
+        ok = bool(result.get('ok', True)) and not result.get('error')
+        _append(channel + '.receipt', shape='application/vnd.archie.receipt+json',
+                payload={'for_serial': ingress.serial, 'adapted': adapted, 'ok': ok, 'error': result.get('error')},
+                stream=stream, revision=revision, final=True,
+                meta={'direction': 'egress', 'authority': 'bridge'})
+        self.sendb(202 if ok else 503, base._json_bytes({
+            'ok': ok, 'field_serial': ingress.serial, 'adapted': adapted, 'result': result,
         }))
 
 
@@ -363,8 +446,8 @@ base.Handler = FieldHandler
 
 
 def main():
-    threading.Thread(target=_field_observer, name='archie-live-field', daemon=True).start()
-    fast.main()
+    threading.Thread(target=controller_observer, name='archie-controller-field-projection', daemon=True).start()
+    base.main()
 
 
 if __name__ == '__main__':
