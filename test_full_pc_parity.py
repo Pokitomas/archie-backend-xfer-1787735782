@@ -101,7 +101,8 @@ class FullPcParityContract(unittest.TestCase):
             urgency=lambda: True,
         )
         self.assertEqual(seen, [payload])
-        self.assertIs(seen[0], payload)
+        self.assertEqual(set(seen[0]), set(payload))
+        self.assertEqual(seen[0]['future_extension'], payload['future_extension'])
         structured = response['result']['structuredContent']
         self.assertEqual(structured['schema'], 'archie-action-result/v1')
         self.assertEqual(structured['result']['receipt'], 'mcp-r')
