@@ -13,7 +13,11 @@ New-Item -ItemType Directory -Force $stagingRoot,$logs | Out-Null
 $stage = Join-Path $stagingRoot ([guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $stage | Out-Null
 
-$raw = 'https://raw.githubusercontent.com/Pokitomas/archie-backend-xfer-1787735782/master/'
+$repo = 'Pokitomas/archie-backend-xfer-1787735782'
+$head = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent'='archie-field-bootstrap/1'; 'Cache-Control'='no-cache' } ('https://api.github.com/repos/' + $repo + '/commits/master?t=' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+$sha = [string]$head.sha
+if ($sha.Length -lt 40) { throw 'could not resolve coherent repository head' }
+$raw = 'https://raw.githubusercontent.com/' + $repo + '/' + $sha + '/'
 $files = @(
   'phone_bridge.py',
   'phone_bridge_fast.py',
@@ -23,9 +27,30 @@ $files = @(
   'live_field.py'
 )
 
+function Start-FieldProcess([string]$dir, [string]$entryName) {
+  $entry = Join-Path $dir $entryName
+  if (-not (Test-Path $entry)) { throw ('missing entry ' + $entryName) }
+  $out = Join-Path $logs 'field.out.log'
+  $err = Join-Path $logs 'field.err.log'
+  Remove-Item $out,$err -Force -ErrorAction SilentlyContinue
+  return Start-Process -FilePath 'py' -ArgumentList @('-3.12',$entry,'--token',$Token,'--topic',$Topic) -WorkingDirectory $dir -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+}
+
+function Wait-FieldHealth([int]$milliseconds=6500) {
+  $deadline = [Environment]::TickCount64 + $milliseconds
+  while ([Environment]::TickCount64 -lt $deadline) {
+    try {
+      $h = Invoke-RestMethod -UseBasicParsing -Headers @{ Authorization=('Bearer ' + $Token); 'Cache-Control'='no-cache' } 'http://127.0.0.1:8844/api/health' -TimeoutSec 1
+      if ($h.ok -eq $true) { return $true }
+    } catch {}
+    Start-Sleep -Milliseconds 120
+  }
+  return $false
+}
+
 try {
   foreach ($name in $files) {
-    Invoke-WebRequest -UseBasicParsing ($raw + $name + '?t=' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -OutFile (Join-Path $stage $name)
+    Invoke-WebRequest -UseBasicParsing ($raw + $name) -OutFile (Join-Path $stage $name)
   }
 
   Push-Location $stage
@@ -47,8 +72,8 @@ raise SystemExit(0 if value.get('ok') else 3)
   }
   finally { Pop-Location }
 
-  # Nothing running is touched until the candidate imports, compiles, and
-  # passes the real controller + seat + screen preflight above.
+  # Candidate is coherent, imports, compiles, and has passed the live
+  # controller + seat + screen preflight before the current process is touched.
   $backup = Join-Path $root 'previous'
   if (Test-Path $backup) { Remove-Item -Recurse -Force $backup }
   if (Test-Path $current) { Move-Item -Force $current $backup }
@@ -57,26 +82,43 @@ raise SystemExit(0 if value.get('ok') else 3)
   Get-CimInstance Win32_Process |
     Where-Object { $_.Name -match '^python' -and $_.CommandLine -match 'phone_bridge(?:_fast|_field)?\.py' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Get-CimInstance Win32_Process |
+    Where-Object { $_.Name -match '^cloudflared' -and $_.CommandLine -match '127\.0\.0\.1:8844' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
-  $out = Join-Path $logs 'field.out.log'
-  $err = Join-Path $logs 'field.err.log'
-  Remove-Item $out,$err -Force -ErrorAction SilentlyContinue
-  $entry = Join-Path $current 'phone_bridge_field.py'
-  Start-Process -FilePath 'py' -ArgumentList @('-3.12',$entry,'--token',$Token,'--topic',$Topic) -WorkingDirectory $current -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err
+  $proc = Start-FieldProcess $current 'phone_bridge_field.py'
+  if (-not (Wait-FieldHealth 7000)) {
+    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    if (Test-Path $backup) {
+      Remove-Item -Recurse -Force $current -ErrorAction SilentlyContinue
+      Move-Item -Force $backup $current
+      $rollbackEntry = if (Test-Path (Join-Path $current 'phone_bridge_field.py')) { 'phone_bridge_field.py' } elseif (Test-Path (Join-Path $current 'phone_bridge_fast.py')) { 'phone_bridge_fast.py' } else { 'phone_bridge.py' }
+      $null = Start-FieldProcess $current $rollbackEntry
+    }
+    throw 'candidate started but failed authenticated local health; rolled back'
+  }
 
   $state = [ordered]@{
     installed_at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    commit = $sha
     current = $current
-    entry = $entry
+    entry = 'phone_bridge_field.py'
+    pid = $proc.Id
     files = $files
-    status = 'started'
+    status = 'healthy'
   }
   $state | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 (Join-Path $root 'state.json')
+
+  # Keep only current/previous plus the newest refused candidate evidence.
+  Get-ChildItem $stagingRoot -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -ne $stage } |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 catch {
   try { if (Test-Path $stage) { Remove-Item -Recurse -Force $stage } } catch {}
   $failure = [ordered]@{
     failed_at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    commit = $sha
     status = 'candidate-refused'
     error = $_.Exception.Message
   }
