@@ -23,8 +23,6 @@ _DEFAULT_CHAT_SOURCES = {'default-chat', 'default_chat', 'chatgpt-default', 'cha
 _CONTROLLER_LOCK = threading.RLock()
 _CONTROLLER_KEY = None
 _SCENE_KEY = None
-_CALL_LOCK = threading.RLock()
-_CALLS: dict[str, dict] = {}
 _PRESENCE_LOCK = threading.RLock()
 _PRESENCE_SHOWN = False
 
@@ -204,8 +202,6 @@ def _show_presence_once() -> None:
             return
         _PRESENCE_SHOWN = True
     try:
-        # Use the controller's existing transient aperture. No second window,
-        # renderer, process, or notification system is created.
         base.controller_action({
             'action': 'undertow',
             'text': '∴',
@@ -218,106 +214,34 @@ def _show_presence_once() -> None:
             payload={'state': 'listening'}, meta={'direction': 'egress', 'authority': 'controller'})
 
 
-@register_adapter('utf8')
-def adapt_utf8(event: dict, raw: bytes):
-    stream = FieldTransport.stream(event.get('stream'))
-    if not _arm_stream(stream):
-        return {'ok': False, 'error': 'entry_pressure'}
-    payload = event.get('payload')
-    value = payload.get('value', '') if isinstance(payload, dict) else payload
-    text = str(value or '')
-    if not bool(event.get('final')):
-        return {'ok': True, 'accepted': True, 'committed': False}
-    if not text or len(text) > 4000:
-        return {'ok': False, 'error': 'text_size'}
-    accepted = base.jpost('/phone/text', {
-        'text': text,
-        'client_sent_ms': (event.get('meta') or {}).get('client_sent_ms') if isinstance(event.get('meta'), dict) else None,
-        'bridge_received_ms': int(time.time() * 1000),
-    }, 2.5)
-    return {'ok': _result_ok(accepted), 'accepted': accepted, 'committed': True}
+def _binary_meta(headers) -> dict:
+    """Decode generic opaque metadata without interpreting its vocabulary."""
+    out = {}
+    packed = str(headers.get('X-Field-Meta') or '')[:12_000]
+    if packed:
+        try:
+            raw = base64.b64decode(packed + '=' * ((4 - len(packed) % 4) % 4), validate=False)
+            value = json.loads(raw.decode('utf-8', 'replace'))
+            if isinstance(value, dict):
+                out.update(value)
+        except Exception:
+            pass
+    # Legacy shims remain only at the transport boundary for old clients.
+    if headers.get('X-Field-Rate'):
+        out['rate'] = headers.get('X-Field-Rate')
+    if headers.get('X-Field-Preview'):
+        out['preview'] = str(headers.get('X-Field-Preview')).lower() in {'1', 'true', 'yes'}
+    return out
 
 
-@register_adapter('application/vnd.archie.contact+json')
-def adapt_contact(event: dict, raw: bytes):
-    stream = FieldTransport.stream(event.get('stream')) or 'contact'
-    payload = event.get('payload') if isinstance(event.get('payload'), dict) else {}
-    active = bool(payload.get('active'))
-    if active:
-        if not _arm_stream(stream):
-            return {'ok': False, 'error': 'entry_pressure'}
-        opened = base.jpost('/phone/audio/begin', {'client_started_ms': payload.get('client_started_ms')}, 2.0)
-        if not _result_ok(opened):
-            return {'ok': False, 'error': 'contact_begin', 'controller': opened}
-        with _CALL_LOCK:
-            _CALLS[stream] = {'call_id': str(opened.get('call_id') or ''), 'opened': time.monotonic()}
-        return {'ok': True, 'active': True, 'call_id': opened.get('call_id'), 'ack': opened.get('ack')}
-    with _CALL_LOCK:
-        current = dict(_CALLS.get(stream) or {})
-    return {'ok': True, 'active': False, 'call_id': current.get('call_id')}
-
-
-@register_adapter('audio/pcm;codec=s16le')
-@register_adapter('pcm_s16le')
-def adapt_pcm(event: dict, raw: bytes):
-    stream = FieldTransport.stream(event.get('stream')) or 'contact'
-    if not _arm_stream(stream):
-        return {'ok': False, 'error': 'entry_pressure'}
-    if not raw:
-        payload = event.get('payload')
-        if isinstance(payload, dict) and payload.get('base64'):
-            try:
-                raw = base64.b64decode(str(payload['base64']), validate=False)
-            except Exception:
-                raw = b''
-    if len(raw) < 6400 or len(raw) > 640000 or len(raw) % 2:
-        return {'ok': False, 'error': 'pcm_window', 'bytes': len(raw)}
-    meta = event.get('meta') if isinstance(event.get('meta'), dict) else {}
-    try:
-        rate = int(meta.get('rate') or 16000)
-    except Exception:
-        rate = 16000
-    with _CALL_LOCK:
-        call = dict(_CALLS.get(stream) or {})
-    call_id = str(meta.get('call_id') or call.get('call_id') or '')
-    preview = bool(meta.get('preview')) and not bool(event.get('final'))
-    path = '/phone/audio/preview' if preview else '/phone/audio'
-    body = {'sample_rate': rate, 'pcm16_base64': base64.b64encode(raw).decode('ascii'), 'call_id': call_id}
-    if isinstance(meta.get('speech_evidence'), bool):
-        body['speech_evidence'] = meta['speech_evidence']
-    accepted = base.jpost(path, body, 3.0)
-    if not preview and call_id:
-        with _CALL_LOCK:
-            _CALLS.pop(stream, None)
-    return {'ok': _result_ok(accepted), 'accepted': accepted, 'preview': preview, 'call_id': call_id}
-
-
-@register_adapter('application/vnd.archie.action+json')
-def adapt_action(event: dict, raw: bytes):
-    if not _arm_stream(FieldTransport.stream(event.get('stream'))):
-        return {'ok': False, 'error': 'entry_pressure'}
-    payload = event.get('payload') if isinstance(event.get('payload'), dict) else {}
-    if not payload.get('action'):
-        return {'ok': False, 'error': 'action'}
-    result = base.controller_action(payload)
-    return {'ok': _result_ok(result), 'result': result}
-
-
-@register_adapter('application/vnd.archie.scene+json')
-def adapt_scene(event: dict, raw: bytes):
-    value = event.get('payload') if isinstance(event.get('payload'), dict) else {}
-    with base.LOCK:
-        base.SCENE.clear()
-        base.SCENE.update(value)
-        base.SCENE['revision'] = int(base.SCENE.get('revision') or 0) + 1
-        base.BUS['event'] = 'field:scene'
-        out = dict(base.SCENE)
-    project_aperture(force=True)
-    return {'ok': True, 'scene': out}
+# Concrete machine interpretations are optional and replaceable. Keeping them
+# in a separate module makes this aperture itself ignorant of modality names.
+from field_controller_adapters import install as _install_controller_adapters
+_install_controller_adapters(register_adapter, base=base, arm_stream=_arm_stream, project_aperture=project_aperture)
 
 
 class FieldHandler(base.Handler):
-    server_version = 'ArchieField/3'
+    server_version = 'ArchieField/4'
 
     def _headers(self, code=200, ctype='application/json', length=None):
         self.send_response(code)
@@ -327,7 +251,7 @@ class FieldHandler(base.Handler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Access-Control-Allow-Origin', self._origin())
         self.send_header('Vary', 'Origin')
-        self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Field-Channel, X-Field-Shape, X-Field-Stream, X-Field-Revision, X-Field-Final, X-Field-Rate, X-Field-Preview')
+        self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Field-Channel, X-Field-Shape, X-Field-Stream, X-Field-Revision, X-Field-Final, X-Field-Meta, X-Field-Rate, X-Field-Preview')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
@@ -428,12 +352,8 @@ class FieldHandler(base.Handler):
                 'revision': self.headers.get('X-Field-Revision') or 0,
                 'final': str(self.headers.get('X-Field-Final') or '').lower() in {'1', 'true', 'yes'},
                 'payload': None,
-                'meta': {},
+                'meta': _binary_meta(self.headers),
             }
-            if self.headers.get('X-Field-Rate'):
-                event['meta']['rate'] = self.headers.get('X-Field-Rate')
-            if self.headers.get('X-Field-Preview'):
-                event['meta']['preview'] = str(self.headers.get('X-Field-Preview')).lower() in {'1', 'true', 'yes'}
             binary = raw
         channel = FieldTransport.channel(event.get('channel') or 'user.primary')
         shape = FieldTransport.shape(event.get('shape') or 'opaque')
