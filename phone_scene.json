@@ -1,31 +1,30 @@
 {
-  "revision": 2,
-  "css": "#root{background:#020304}#screen{background:#020304;filter:saturate(.9) contrast(1.035) brightness(.96)}#ink{left:18vw;right:4vw;bottom:0;height:29vh;min-height:112px;pointer-events:auto}#ear{left:0;bottom:0;width:18vw;height:29vh;min-width:72px;min-height:112px}.scene-reply{left:5.2vw;top:18vh;width:76vw;max-height:43vh;font:460 clamp(15px,2.1vw,19px)/1.42 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.025em;color:rgba(238,244,246,.92);text-shadow:0 1px 14px rgba(0,0,0,.8);mask-image:linear-gradient(180deg,#000 0,#000 82%,transparent 100%);-webkit-mask-image:linear-gradient(180deg,#000 0,#000 82%,transparent 100%);mix-blend-mode:screen}.scene-draft{left:19vw;right:5vw;bottom:7.2vh;max-height:15vh;font:520 clamp(16px,2.35vw,20px)/1.26 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.035em;color:rgba(245,249,250,.98);text-shadow:0 0 18px rgba(255,255,255,.08),0 1px 12px #000;mask-image:linear-gradient(90deg,#000 0,#000 84%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,#000 0,#000 84%,transparent 100%)}.scene-latency{right:1.8vw;top:14vh;height:23vh;writing-mode:vertical-rl;text-orientation:mixed;font:9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.15em;color:rgba(227,235,238,.28)}.scene-event{left:4.7vw;bottom:2.7vh;max-width:52vw;font:8px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;color:rgba(227,235,238,.2);white-space:nowrap;text-overflow:ellipsis}.scene-voice{left:5.5vw;bottom:7.8vh;width:7vw;height:7vw;min-width:28px;min-height:28px;font-size:0}.scene-voice:not(:empty){opacity:1}",
+  "revision": 3,
+  "css": "#root{background:#010203}#screen{background:#010203;filter:saturate(.84) contrast(1.04) brightness(.94)}.scene-reply{left:5.2vw;right:7.5vw;top:15.5vh;max-height:47vh;font:470 clamp(15px,2.15vw,19px)/1.43 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.028em;color:rgba(239,244,246,.94);text-shadow:0 1px 16px rgba(0,0,0,.92);mask-image:linear-gradient(180deg,#000 0,#000 88%,transparent 100%);-webkit-mask-image:linear-gradient(180deg,#000 0,#000 88%,transparent 100%)}.scene-latency{right:4.5vw;top:8.2vh;font:9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.13em;color:rgba(232,239,241,.26)}.scene-state{left:4.9vw;top:8.2vh;font:9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;color:rgba(232,239,241,.24)}.scene-voice{left:5.8vw;bottom:calc(13.8vh + env(safe-area-inset-bottom));font:8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;color:rgba(242,247,248,.42)}",
   "layers": [
     {"id":"reply","bind":"reply.text","class":"scene-reply","hideEmpty":true},
-    {"id":"draft","bind":"draft.text","class":"scene-draft","hideEmpty":true},
-    {"id":"latency","bind":"latency","class":"scene-latency","hideEmpty":true},
-    {"id":"event","bind":"bus.event","class":"scene-event","hideEmpty":true},
-    {"id":"voice","bind":"voice.active","class":"scene-voice","hideEmpty":true}
+    {"id":"latency","bind":"latency","class":"scene-latency","prefix":"τ ","hideEmpty":true},
+    {"id":"state","bind":"status","class":"scene-state","map":{"cold":"∅","recovering":"↻","live":"1"},"hideEmpty":false},
+    {"id":"voice","bind":"voice.active","class":"scene-voice","map":{"true":"μ","false":""},"hideEmpty":true}
   ],
   "nodes": [
-    {"kind":"line","x1":0.055,"y1":0.905,"x2":0.16,"y2":0.905,"stroke":"rgba(237,244,246,.15)","line":1},
-    {"kind":"ring","x":0.087,"y":0.905,"r":0.022,"stroke":"rgba(237,244,246,.54)","line":1,"when":"voice.active"},
-    {"kind":"ring","x":0.087,"y":0.905,"r":0.009,"stroke":"rgba(237,244,246,.9)","line":1,"when":"voice.active"},
-    {"kind":"wave","x":0.5,"y":0.906,"amp":0.006,"freq":5.5,"speed":2.6,"stroke":"rgba(237,244,246,.24)","line":0.7,"when":"voice.active"},
-    {"kind":"polyline","points":[[0.04,0.09],[0.13,0.09],[0.17,0.074],[0.29,0.074]],"stroke":"rgba(236,243,245,.13)","line":0.75},
-    {"kind":"polyline","points":[[0.71,0.927],[0.84,0.927],[0.88,0.91],[0.96,0.91]],"stroke":"rgba(236,243,245,.11)","line":0.75}
+    {"kind":"grid","x":0.089,"y":0.132,"cols":3,"rows":3,"sx":0.012,"sy":0.009,"r":0.0017,"fill":"rgba(242,247,248,.22)"},
+    {"kind":"ring","x":0.089,"y":0.887,"r":0.016,"stroke":"rgba(242,247,248,.22)","line":0.8,"when":"voice.active"},
+    {"kind":"disc","x":0.089,"y":0.887,"r":0.003,"fill":"rgba(242,247,248,.78)","when":"voice.active"},
+    {"kind":"grid","x":0.91,"y":0.887,"cols":2,"rows":2,"sx":0.011,"sy":0.008,"r":0.0014,"fill":"rgba(242,247,248,.13)"}
   ],
   "features": {
-    "screenTap": true,
-    "micAutostart": true,
-    "draftAutocommitMs": 28,
     "screenStream": true,
+    "screenInteraction": false,
+    "textFirst": true,
+    "singleControl": true,
+    "tapControl":"commit-or-focus",
+    "holdControl":"push-to-talk",
+    "micAutostart": false,
     "preserveDraftOffline": true,
     "bufferVoiceOfflineSeconds": 6,
     "autoRecover": true,
-    "longPressRightClick": true,
-    "dragScroll": true,
-    "doubleTapDoubleClick": true
+    "outputAudioOnPhone": false,
+    "controllerAcousticField": true
   }
 }
