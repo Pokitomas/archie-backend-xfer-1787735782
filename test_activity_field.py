@@ -21,6 +21,7 @@ class ActivityFieldContract(unittest.TestCase):
         snap = field.snapshot()
         self.assertEqual(snap['serial'], len(snap['items']))
         self.assertFalse(any('deadline' in str(x).lower() for x in snap['items']))
+        self.assertEqual(snap['items'][0]['kind'], 'bridge')
 
     def test_workspace_patch_is_rendered_as_paths_not_patch_body(self):
         field = ActivityField()
@@ -48,6 +49,13 @@ class ActivityFieldContract(unittest.TestCase):
         b = field.push('action', 'click', 'same')
         self.assertEqual(a.seq, b.seq)
         self.assertEqual(field.snapshot()['serial'], 1)
+
+    def test_snapshot_is_newest_first_for_constant_time_surface_binding(self):
+        field = ActivityField()
+        field.push('action', 'first')
+        field.push('action', 'second')
+        field.push('action', 'third')
+        self.assertEqual([x['label'] for x in field.snapshot()['items'][:3]], ['third', 'second', 'first'])
 
 
 if __name__ == '__main__':
