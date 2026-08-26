@@ -14,7 +14,7 @@ class AcousticGesture:
     A render-neutral controller instruction.
 
     It deliberately carries no voice id, phoneme ids, samples, codec frames, or
-    model-specific token ids.  A renderer may be replaced without changing the
+    model-specific token ids. A renderer may be replaced without changing the
     response/turn semantics encoded here.
     """
 
@@ -35,18 +35,18 @@ class AcousticField:
     """
     Text-first response acoustics for the controller.
 
-    This is intentionally *not* TTS.  Text is the canonical response and can be
-    displayed as soon as it exists.  AcousticField only turns a changing text
-    stream plus turn-taking state into a tiny stream of acoustic gestures:
+    This is intentionally *not* TTS. Text is canonical and can be displayed as
+    soon as it exists. AcousticField only turns changing text plus turn-taking
+    state into a tiny stream of acoustic gestures:
 
       prime   - silently prepare a text span; never audible by itself
       phrase  - a stable span may be rendered if a renderer exists
       cut     - invalidate audible work immediately
       release - the current response has no more audible work
 
-    The generation number is a cancellation membrane.  A renderer must discard
-    queued work from older generations.  User onset and model rewrites advance
-    the generation before any new audible work can be admitted.
+    `generation` is the cancellation membrane. Any future renderer must discard
+    queued work from older generations. User onset, response supersession, and
+    model rewrites advance generation before new audible work is admitted.
     """
 
     def __init__(
@@ -88,6 +88,22 @@ class AcousticField:
     def user_active(self) -> bool:
         return self._user_active
 
+    @property
+    def revision(self) -> int:
+        return self._revision
+
+    def snapshot(self) -> dict:
+        return {
+            'generation': self._generation,
+            'revision': self._revision,
+            'chars': len(self._text),
+            'primed_chars': self._primed,
+            'emitted_chars': self._emitted,
+            'user_active': self._user_active,
+            'speaking': self._speaking,
+            'done': self._done,
+        }
+
     def _gesture(self, kind: GestureKind, **kw) -> AcousticGesture:
         self._seq += 1
         return AcousticGesture(
@@ -101,6 +117,21 @@ class AcousticField:
     def _invalidate(self) -> None:
         self._generation += 1
         self._speaking = False
+
+    def supersede(self, *, now_ns: int | None = None) -> list[AcousticGesture]:
+        """Cancel the old response and clear its text without resetting generation."""
+        now = self._clock_ns() if now_ns is None else int(now_ns)
+        was_speaking = self._speaking
+        old_end = self._emitted
+        self._invalidate()
+        out = [self._gesture('cut', start=old_end, end=old_end, reason='response-superseded')] if was_speaking else []
+        self._revision = -1
+        self._text = ''
+        self._emitted = 0
+        self._primed = 0
+        self._done = False
+        self._resume_after_ns = 2**63 - 1 if self._user_active else now
+        return out
 
     def set_user_active(self, active: bool, *, now_ns: int | None = None) -> list[AcousticGesture]:
         """Apply turn-taking state. User onset is an unconditional hard cut."""
@@ -120,8 +151,8 @@ class AcousticField:
             out.extend(self._prime_new(reason='user-onset-prepare'))
             return out
 
-        # A tiny quiet guard prevents ping-pong on breath/noise edges.  It does
-        # not delay text; only optional acoustic emission is held.
+        # A tiny quiet guard prevents ping-pong on breath/noise edges. It never
+        # delays text; only optional acoustic emission is held.
         self._resume_after_ns = now + self.resume_guard_ns
         return []
 
@@ -162,7 +193,7 @@ class AcousticField:
         return out
 
     def advance(self, *, now_ns: int | None = None) -> list[AcousticGesture]:
-        """Advance a pending response after a user-silence guard expires."""
+        """Advance pending optional audio after the user-silence guard expires."""
         now = self._clock_ns() if now_ns is None else int(now_ns)
         return self._admit(now)
 
@@ -227,7 +258,7 @@ class AcousticField:
                 last_space = i + 1
 
         # Do not manufacture tiny robotic chunks just because a token stream is
-        # still growing.  Only force a word boundary when a phrase becomes long.
+        # growing. Only force a word boundary when a phrase becomes genuinely long.
         if remaining >= self.max_phrase_chars and last_space > start:
             return last_space
         if medium > start:
@@ -249,11 +280,11 @@ class AcousticField:
 
     @staticmethod
     def _shape(span: str) -> tuple[float, float, float, float]:
-        """Cheap, renderer-neutral dynamics. No voice or pronunciation model."""
+        """Cheap renderer-neutral dynamics; no voice or pronunciation model."""
         s = span.strip()
         if not s:
             return 1.0, 0.0, 0.0, 1.0
-        terminal = s[-1] if s else ''
+        terminal = s[-1]
         density = min(1.0, len(s) / 96.0)
         pace = 1.045 - density * 0.085
         if terminal == '!':
