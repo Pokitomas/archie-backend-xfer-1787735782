@@ -68,8 +68,8 @@ class NativeV6Server(base.ThreadingHTTPServer):
         return super().server_bind()
 
 
-# All runtime API traffic uses the direct handler. No cloudflared/ntfy worker is
-# started by this module.
+# All runtime API traffic uses the direct handler. No hosted transport or
+# rendezvous worker is started by this module.
 entry.EntryFieldHandler = NativeFieldHandler
 field.FieldHandler = NativeFieldHandler
 base.Handler = NativeFieldHandler
