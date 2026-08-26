@@ -18,9 +18,10 @@ class Activity:
 class ActivityField:
     """Small render-neutral ledger for what the controller is doing.
 
-    This is intentionally passive.  It does not create another control surface;
-    it only mirrors controller/PC activity so the phone can show coding and
-    actions while the one-button + text interaction remains unchanged.
+    This is intentionally passive. It mirrors controller/PC activity so the
+    phone can show coding and actions while the one-button + text interaction
+    remains unchanged. Streaming reply revisions are deliberately coalesced;
+    the reply plane already owns token-by-token immediacy.
     """
 
     def __init__(self, limit: int = 160):
@@ -29,7 +30,6 @@ class ActivityField:
         self._last = {
             'occupant': None,
             'input_seq': None,
-            'output_seq': None,
             'reply_key': None,
             'focus': None,
             'bus_event': None,
@@ -73,21 +73,14 @@ class ActivityField:
             out.append(self.push('input', f'{kind} #{input_seq}', detail, source='seat'))
 
         reply = seat.get('reply') if isinstance(seat.get('reply'), dict) else {}
-        reply_key = (
-            reply.get('seq', seat.get('output_seq')),
-            reply.get('revision'),
-            reply.get('done'),
-            reply.get('fault'),
-            reply.get('aborted'),
-        )
-        if reply_key != self._last['reply_key'] and any(v is not None for v in reply_key):
+        seq = reply.get('seq', seat.get('output_seq'))
+        status = 'fault' if reply.get('fault') else 'aborted' if reply.get('aborted') else 'done' if reply.get('done') else 'stream'
+        # Revision/char-count changes do not belong in this plane. Emit reply
+        # start once and then only semantic terminal-state changes.
+        reply_key = (seq, status, str(reply.get('fault') or '')[:120])
+        if seq is not None and reply_key != self._last['reply_key']:
             self._last['reply_key'] = reply_key
-            seq = reply.get('seq', seat.get('output_seq'))
-            chars = reply.get('chars')
-            if chars is None:
-                chars = len(str(reply.get('text') or ''))
-            status = 'fault' if reply.get('fault') else 'aborted' if reply.get('aborted') else 'done' if reply.get('done') else 'stream'
-            detail = str(reply.get('fault') or '')[:180] if reply.get('fault') else f'{chars}ch'
+            detail = str(reply.get('fault') or '')[:180]
             out.append(self.push('output', f'reply #{seq}', detail, status=status, source='seat'))
 
         if focus and focus != self._last['focus']:
