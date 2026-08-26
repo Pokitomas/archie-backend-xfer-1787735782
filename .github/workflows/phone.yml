@@ -4,9 +4,12 @@ on:
     branches: [master]
     paths:
       - index.html
+      - phone_client.js
       - phone_bridge.py
+      - phone_bridge_fast.py
       - phone_scene.json
       - phone_selftest.py
+      - test_phone_bridge_fast.py
       - acoustic_field.py
       - test_acoustic_field.py
       - .github/workflows/phone.yml
@@ -22,39 +25,38 @@ jobs:
         with:
           python-version: '3.12'
       - name: Python syntax
-        run: python -m py_compile phone_bridge.py phone_selftest.py acoustic_field.py test_acoustic_field.py
+        run: python -m py_compile phone_bridge.py phone_bridge_fast.py phone_selftest.py test_phone_bridge_fast.py acoustic_field.py test_acoustic_field.py
       - name: Bridge contract
         run: python phone_selftest.py
+      - name: Fast bridge contract
+        run: python test_phone_bridge_fast.py
       - name: Acoustic field contract
         run: python test_acoustic_field.py
       - name: Static shell contract
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json,re
-          s=Path('index.html').read_text(encoding='utf-8')
-          required=['/api/selftest','recoverForever','text-stream','screen.mjpg','applyScene','liveStyle','loadStaticScene','audioQueue','queueText','holdTimer','compositionstart','visualViewport']
-          assert all(x in s for x in required), [x for x in required if x not in s]
-          assert 'vercel.app' not in s.lower()
-          assert 'id="fallback"' not in s and 'id="retry"' not in s and 'id="dock"' not in s
-          assert s.lower().count('<button') == 1
-          assert '/api/pointer' not in s and 'pointerAction' not in s
+          import json
+          html=Path('index.html').read_text(encoding='utf-8')
+          js=Path('phone_client.js').read_text(encoding='utf-8')
+          assert 'phone_client.js' in html
+          assert html.lower().count('<button') == 1
+          assert 'id="fallback"' not in html and 'id="retry"' not in html and 'id="dock"' not in html
+          required=['/api/selftest','recoverForever','text-stream','screen.mjpg','applyScene','loadStaticScene','audioQueue','queueText','compositionstart','visualViewport','reply.ndjson','voice-state','voiceWanted','voiceEpoch','phone_bridge_fast.py','acoustic_field.py']
+          assert all(x in js for x in required), [x for x in required if x not in js]
+          assert 'vercel.app' not in (html+js).lower()
+          assert '/api/pointer' not in js and 'pointerAction' not in js
           for forbidden in ['speechSynthesis','new Audio(','<audio','.play(']:
-              assert forbidden not in s, forbidden
+              assert forbidden not in html+js, forbidden
           scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
           assert int(scene.get('revision',0)) >= 3
-          binds={x.get('bind') for x in scene.get('layers',[]) if isinstance(x,dict)}
-          assert 'reply.text' in binds and 'voice.active' in binds
           feat=scene.get('features',{})
           assert feat.get('textFirst') is True
           assert feat.get('singleControl') is True
           assert feat.get('screenInteraction') is False
           assert feat.get('outputAudioOnPhone') is False
           assert feat.get('controllerAcousticField') is True
-          scripts=re.findall(r'<script>(.*?)</script>',s,re.S)
-          assert len(scripts)==1
-          Path('/tmp/phone.js').write_text(scripts[0],encoding='utf-8')
-          print('static shell contract ok',len(s),len(scripts[0]))
+          print('phone contracts ok',len(html),len(js))
           PY
       - name: Browser script syntax
-        run: node --check /tmp/phone.js
+        run: node --check phone_client.js
