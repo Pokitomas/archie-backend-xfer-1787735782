@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import argparse
 import base64
-import io
 import json
 import threading
 import time
@@ -22,6 +22,7 @@ _LAST_DEFAULT_CHAT_SEQ = -1
 _DEFAULT_CHAT_SOURCES = {'default-chat', 'default_chat', 'chatgpt-default', 'chatgpt'}
 _CONTROLLER_LOCK = threading.RLock()
 _CONTROLLER_KEY = None
+_SCENE_KEY = None
 _CALL_LOCK = threading.RLock()
 _CALLS: dict[str, dict] = {}
 _PRESENCE_LOCK = threading.RLock()
@@ -104,7 +105,7 @@ def _maybe_arm_default_chat(controller: dict) -> None:
 
 
 def _redact_temporal_secret(value, path=()):
-    """Keep normal event timestamps while removing the hidden pressure clock."""
+    """Keep normal event timestamps while removing hidden pressure clocks."""
     if isinstance(value, list):
         return [_redact_temporal_secret(v, path + ('[]',)) for v in value]
     if not isinstance(value, dict):
@@ -160,10 +161,25 @@ def sample_controller(*, force: bool = False) -> dict:
             shape='application/vnd.archie.controller-livefield+json',
             payload=public,
             revision=int(snap.get('activity') or 0),
-            final=False,
             meta={'direction': 'egress', 'authority': 'controller'},
         )
     return snap
+
+
+def project_aperture(*, force: bool = False) -> None:
+    """Expose aperture resources as field values, not hard-coded client paths."""
+    global _SCENE_KEY
+    with base.LOCK:
+        scene = dict(base.SCENE)
+    scene_key = json.dumps(scene, sort_keys=True, separators=(',', ':'), default=str)
+    if force or scene_key != _SCENE_KEY:
+        _SCENE_KEY = scene_key
+        _append('surface.scene', shape='application/vnd.archie.scene+json', payload=scene,
+                revision=int(scene.get('revision') or 0), meta={'direction': 'egress', 'authority': 'surface'})
+    if force:
+        _append('machine.screen', shape='application/vnd.archie.stream-ref+json',
+                payload={'path': '/api/screen.mjpg', 'transport': 'mjpeg', 'passive': True},
+                meta={'direction': 'egress', 'authority': 'machine'})
 
 
 def controller_observer():
@@ -171,6 +187,7 @@ def controller_observer():
         wait = .06
         try:
             snap = sample_controller()
+            project_aperture()
             sensors = snap.get('sensors') if isinstance(snap.get('sensors'), dict) else {}
             seat = sensors.get('seat') if isinstance(sensors.get('seat'), dict) else {}
             reply = seat.get('reply') if isinstance(seat.get('reply'), dict) else {}
@@ -187,8 +204,8 @@ def _show_presence_once() -> None:
             return
         _PRESENCE_SHOWN = True
     try:
-        # Reuse the controller's own transient aperture instead of spawning a
-        # second Windows overlay/process just to say that the field is alive.
+        # Use the controller's existing transient aperture. No second window,
+        # renderer, process, or notification system is created.
         base.controller_action({
             'action': 'undertow',
             'text': '∴',
@@ -209,8 +226,7 @@ def adapt_utf8(event: dict, raw: bytes):
     payload = event.get('payload')
     value = payload.get('value', '') if isinstance(payload, dict) else payload
     text = str(value or '')
-    final = bool(event.get('final'))
-    if not final:
+    if not bool(event.get('final')):
         return {'ok': True, 'accepted': True, 'committed': False}
     if not text or len(text) > 4000:
         return {'ok': False, 'error': 'text_size'}
@@ -266,11 +282,7 @@ def adapt_pcm(event: dict, raw: bytes):
     call_id = str(meta.get('call_id') or call.get('call_id') or '')
     preview = bool(meta.get('preview')) and not bool(event.get('final'))
     path = '/phone/audio/preview' if preview else '/phone/audio'
-    body = {
-        'sample_rate': rate,
-        'pcm16_base64': base64.b64encode(raw).decode('ascii'),
-        'call_id': call_id,
-    }
+    body = {'sample_rate': rate, 'pcm16_base64': base64.b64encode(raw).decode('ascii'), 'call_id': call_id}
     if isinstance(meta.get('speech_evidence'), bool):
         body['speech_evidence'] = meta['speech_evidence']
     accepted = base.jpost(path, body, 3.0)
@@ -300,11 +312,25 @@ def adapt_scene(event: dict, raw: bytes):
         base.SCENE['revision'] = int(base.SCENE.get('revision') or 0) + 1
         base.BUS['event'] = 'field:scene'
         out = dict(base.SCENE)
+    project_aperture(force=True)
     return {'ok': True, 'scene': out}
 
 
 class FieldHandler(base.Handler):
-    server_version = 'ArchieField/2'
+    server_version = 'ArchieField/3'
+
+    def _headers(self, code=200, ctype='application/json', length=None):
+        self.send_response(code)
+        self.send_header('Content-Type', ctype)
+        if length is not None:
+            self.send_header('Content-Length', str(length))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Access-Control-Allow-Origin', self._origin())
+        self.send_header('Vary', 'Origin')
+        self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Field-Channel, X-Field-Shape, X-Field-Stream, X-Field-Revision, X-Field-Final, X-Field-Rate, X-Field-Preview')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
 
     def _ndjson(self, value: dict):
         self.wfile.write(base._json_bytes(value) + b'\n')
@@ -317,6 +343,7 @@ class FieldHandler(base.Handler):
         self.end_headers()
         try:
             sample_controller(force=True)
+            project_aperture(force=True)
         except Exception:
             pass
         cursor = 0
@@ -342,41 +369,46 @@ class FieldHandler(base.Handler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-        if path == '/api/field.ndjson':
-            if not self._token():
-                self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
-                return
-            self._stream_field()
+        if path in {'/api/health', '/api/selftest', '/api/screen', '/api/screen.mjpg'}:
+            return base.Handler.do_GET(self)
+        if path not in {'/api/field.ndjson', '/api/field'}:
+            self.sendb(404, b'{"ok":false,"error":"not_found"}')
             return
-        if path == '/api/field':
-            if not self._token():
-                self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
-                return
-            q = parse_qs(urlparse(self.path).query)
-            try:
-                after = int((q.get('after') or ['0'])[0])
-            except Exception:
-                after = 0
-            try:
-                sample_controller(force=(after == 0))
-            except Exception:
-                pass
-            self.sendb(200, base._json_bytes({'ok': True, **WIRE.replay(after=after, limit=192)}))
-            return
-        return super().do_GET()
-
-    def do_POST(self):
-        path = urlparse(self.path).path
-        if path == '/api/session':
-            result = super().do_POST()
-            if self._token() and base.SELFTEST.get('ok'):
-                _show_presence_once()
-            return result
-        if path != '/api/field':
-            return super().do_POST()
         if not self._token():
             self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
             return
+        if path == '/api/field.ndjson':
+            self._stream_field()
+            return
+        q = parse_qs(urlparse(self.path).query)
+        try:
+            after = int((q.get('after') or ['0'])[0])
+        except Exception:
+            after = 0
+        try:
+            sample_controller(force=(after == 0))
+            if after == 0:
+                project_aperture(force=True)
+        except Exception:
+            pass
+        self.sendb(200, base._json_bytes({'ok': True, **WIRE.replay(after=after, limit=192)}))
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if path not in {'/api/session', '/api/field'}:
+            self.sendb(404, b'{"ok":false,"error":"not_found"}')
+            return
+        if not self._token():
+            self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
+            return
+        if path == '/api/session':
+            if not base.SELFTEST.get('ok'):
+                self.sendb(503, base._json_bytes(base.SELFTEST))
+                return
+            self.sendb(200, b'{"ok":true}', extra={'Set-Cookie': f'archie_phone={base.TOKEN}; Path=/; HttpOnly; Secure; SameSite=None'})
+            _show_presence_once()
+            return
+
         n = min(8_000_000, int(self.headers.get('Content-Length') or 0))
         raw = self.rfile.read(n) if n else b''
         content_type = str(self.headers.get('Content-Type') or '').lower()
@@ -412,16 +444,11 @@ class FieldHandler(base.Handler):
             revision = 0
         final = bool(event.get('final'))
         meta = event.get('meta') if isinstance(event.get('meta'), dict) else {}
-
-        # User-originated traffic cannot cross into the controller aperture
-        # without first arming hidden entry pressure, independent of shape.
         if channel.startswith('user.') and not _arm_stream(stream):
             self.sendb(503, b'{"ok":false,"error":"entry_pressure"}')
             return
-
         ingress = _append(channel, shape=shape, payload=binary if binary else event.get('payload'),
-                          stream=stream, revision=revision, final=final,
-                          meta={**meta, 'direction': 'ingress'})
+                          stream=stream, revision=revision, final=final, meta={**meta, 'direction': 'ingress'})
         adapter = _ADAPTERS.get(shape)
         adapted = adapter is not None
         result = {'ok': True, 'accepted': True, 'adapted': False}
@@ -435,20 +462,43 @@ class FieldHandler(base.Handler):
         ok = bool(result.get('ok', True)) and not result.get('error')
         _append(channel + '.receipt', shape='application/vnd.archie.receipt+json',
                 payload={'for_serial': ingress.serial, 'adapted': adapted, 'ok': ok, 'error': result.get('error')},
-                stream=stream, revision=revision, final=True,
-                meta={'direction': 'egress', 'authority': 'bridge'})
-        self.sendb(202 if ok else 503, base._json_bytes({
-            'ok': ok, 'field_serial': ingress.serial, 'adapted': adapted, 'result': result,
-        }))
-
-
-base.Handler = FieldHandler
+                stream=stream, revision=revision, final=True, meta={'direction': 'egress', 'authority': 'bridge'})
+        self.sendb(202 if ok else 503, base._json_bytes({'ok': ok, 'field_serial': ingress.serial, 'adapted': adapted, 'result': result}))
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--token', required=True)
+    ap.add_argument('--topic', default='')
+    args = ap.parse_args()
+    base.TOKEN = args.token.strip()
+    base.TOPIC = args.topic.strip()
+    if len(base.TOKEN) < 24:
+        raise SystemExit('token too short')
+    server = base.ThreadingHTTPServer(('127.0.0.1', base.PORT), FieldHandler)
+    serving = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .05}, name='archie-field-http', daemon=True)
+    serving.start()
+    test = base.run_selftest()
+    print('SELFTEST', json.dumps(test, separators=(',', ':')), flush=True)
+    if not test.get('ok'):
+        base.signal('field withheld', json.dumps(test.get('checks', {}), separators=(',', ':')))
+        base.STOP.wait(2.0)
+        server.shutdown(); server.server_close()
+        raise SystemExit(3)
+    base.signal('field selftest passed', json.dumps(test.get('checks', {}), separators=(',', ':')))
+    threading.Thread(target=base.scene_worker, name='archie-field-scene', daemon=True).start()
     threading.Thread(target=controller_observer, name='archie-controller-field-projection', daemon=True).start()
-    base.main()
+    threading.Thread(target=base.tunnel_worker, name='archie-field-tunnel', daemon=True).start()
+    print(f'ARCHIE FIELD local http://127.0.0.1:{base.PORT}', flush=True)
+    try:
+        while serving.is_alive() and not base.STOP.wait(.5):
+            pass
+    finally:
+        base.STOP.set()
+        server.shutdown(); server.server_close()
 
+
+base.Handler = FieldHandler
 
 if __name__ == '__main__':
     main()
