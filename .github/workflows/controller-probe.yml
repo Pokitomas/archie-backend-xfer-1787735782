@@ -1,0 +1,18 @@
+name: controller-probe
+on:
+  push:
+    paths:
+      - '.github/workflows/controller-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe controller contract
+        shell: bash
+        run: |
+          set -x
+          curl -sS -i --max-time 25 \
+            -X POST \
+            -H 'content-type: application/json' \
+            --data '{}' \
+            'https://archie-gpt56-live-controller.vercel.app/api' || true
