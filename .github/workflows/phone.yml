@@ -7,6 +7,8 @@ on:
       - phone_bridge.py
       - phone_scene.json
       - phone_selftest.py
+      - acoustic_field.py
+      - test_acoustic_field.py
       - .github/workflows/phone.yml
   workflow_dispatch:
 permissions:
@@ -20,27 +22,35 @@ jobs:
         with:
           python-version: '3.12'
       - name: Python syntax
-        run: python -m py_compile phone_bridge.py phone_selftest.py
+        run: python -m py_compile phone_bridge.py phone_selftest.py acoustic_field.py test_acoustic_field.py
       - name: Bridge contract
         run: python phone_selftest.py
+      - name: Acoustic field contract
+        run: python test_acoustic_field.py
       - name: Static shell contract
         run: |
           python - <<'PY'
           from pathlib import Path
           import json,re
           s=Path('index.html').read_text(encoding='utf-8')
-          required=['/api/selftest','recoverForever','text-stream','screen.mjpg','applyScene','/api/pointer','liveStyle','loadStaticScene','audioQueue','kick()']
+          required=['/api/selftest','recoverForever','text-stream','screen.mjpg','applyScene','liveStyle','loadStaticScene','audioQueue','queueText','holdTimer','compositionstart','visualViewport']
           assert all(x in s for x in required), [x for x in required if x not in s]
           assert 'vercel.app' not in s.lower()
-          assert 'id="fallback"' not in s and 'id="retry"' not in s
-          assert 'id="dock"' not in s and '<button' not in s.lower()
+          assert 'id="fallback"' not in s and 'id="retry"' not in s and 'id="dock"' not in s
+          assert s.lower().count('<button') == 1
+          assert '/api/pointer' not in s and 'pointerAction' not in s
+          for forbidden in ['speechSynthesis','new Audio(','<audio','.play(']:
+              assert forbidden not in s, forbidden
           scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
-          assert int(scene.get('revision',0)) >= 2
+          assert int(scene.get('revision',0)) >= 3
           binds={x.get('bind') for x in scene.get('layers',[]) if isinstance(x,dict)}
-          assert {'reply.text','draft.text','voice.active'} <= binds
+          assert 'reply.text' in binds and 'voice.active' in binds
           feat=scene.get('features',{})
-          for k in ['autoRecover','preserveDraftOffline','bufferVoiceOfflineSeconds','dragScroll','longPressRightClick']:
-              assert feat.get(k), k
+          assert feat.get('textFirst') is True
+          assert feat.get('singleControl') is True
+          assert feat.get('screenInteraction') is False
+          assert feat.get('outputAudioOnPhone') is False
+          assert feat.get('controllerAcousticField') is True
           scripts=re.findall(r'<script>(.*?)</script>',s,re.S)
           assert len(scripts)==1
           Path('/tmp/phone.js').write_text(scripts[0],encoding='utf-8')
