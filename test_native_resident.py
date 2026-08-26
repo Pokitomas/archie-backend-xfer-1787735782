@@ -55,19 +55,25 @@ class NativeResidentContract(unittest.TestCase):
             Path('native_field_server.py').read_text(encoding='utf-8'),
             Path('native_field_client.js').read_text(encoding='utf-8'),
             Path('native_index.html').read_text(encoding='utf-8'),
+            Path('field_kernel.js').read_text(encoding='utf-8'),
+            Path('field_surface.js').read_text(encoding='utf-8'),
+            Path('field_ios_adapter.js').read_text(encoding='utf-8'),
         ]).lower()
         for forbidden in ('vercel.app', 'trycloudflare.com', 'cloudflared', 'ntfy.sh', 'tail1bf489', 'raw.githubusercontent.com', 'raw.githack'):
             self.assertNotIn(forbidden, sources)
 
     def test_native_client_has_one_interaction_control_and_generic_field_api(self):
         html = Path('native_index.html').read_text(encoding='utf-8')
-        js = Path('native_field_client.js').read_text(encoding='utf-8')
+        entry = Path('native_field_client.js').read_text(encoding='utf-8')
+        kernel = Path('field_kernel.js').read_text(encoding='utf-8')
         self.assertEqual(html.lower().count('<button'), 1)
-        self.assertIn('window.ARCHIE_FIELD', js)
-        self.assertIn('/api/field', js)
-        self.assertIn('/api/field.ndjson', js)
-        self.assertNotIn('/api/pointer', js)
-        self.assertNotIn('speechSynthesis', js)
+        self.assertIn('window.ARCHIE_FIELD', kernel)
+        self.assertIn('/api/field', kernel)
+        self.assertIn('/api/field.ndjson', kernel)
+        self.assertIn('location.origin', entry)
+        self.assertNotIn('/api/field', entry)
+        self.assertNotIn('/api/pointer', entry + kernel)
+        self.assertNotIn('speechSynthesis', entry + kernel)
 
 
 if __name__ == '__main__':
