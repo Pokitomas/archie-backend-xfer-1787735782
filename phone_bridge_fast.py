@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import threading
 import time
@@ -18,10 +19,81 @@ VOICE_ACTIVE = False
 LATEST = {'serial': 0, 'reply': {}, 'seat': {}, 'acoustic': FIELD.snapshot(), 'at': 0.0}
 _LAST_RESPONSE_ID = None
 
+# Deliberately infrastructure-only. The controller receives the concrete window;
+# model-facing surfaces receive only a binary urgency signal, never duration,
+# deadline, remaining time, or a returned timebox receipt.
+_ENTRY_SECONDS = 900.0
+_ENTRY_LOCK = threading.RLock()
+_ENTRY_UNTIL = 0.0
+_ENTRY_STREAM_ORDER = deque()
+_ENTRY_STREAMS: set[str] = set()
+_ENTRY_STREAM_CAP = 256
+_LAST_DEFAULT_CHAT_SEQ = -1
+_DEFAULT_CHAT_SOURCES = {'default-chat', 'default_chat', 'chatgpt-default', 'chatgpt'}
+
 
 def _text_active() -> bool:
     with base.LOCK:
         return bool(base.BUS.get('text_active'))
+
+
+def _urgency() -> bool:
+    with _ENTRY_LOCK:
+        return time.monotonic() < _ENTRY_UNTIL
+
+
+def _arm_entry_pressure() -> bool:
+    """Arm controller residence without returning temporal detail to cognition."""
+    global _ENTRY_UNTIL
+    try:
+        result = base.controller_action({
+            'action': 'timebox',
+            'seconds': _ENTRY_SECONDS,
+            'label': 'entry-pressure',
+            'intent': 'automatic ingress pressure; expose urgency only',
+        })
+        ok = bool(result.get('ok', True)) and not result.get('error')
+    except Exception:
+        ok = False
+    if ok:
+        with _ENTRY_LOCK:
+            _ENTRY_UNTIL = max(_ENTRY_UNTIL, time.monotonic() + _ENTRY_SECONDS)
+    return ok
+
+
+def _arm_text_stream(stream_id: str) -> bool:
+    """Exactly-once pressure before a text stream can reach the base bridge."""
+    sid = str(stream_id or '')[:120]
+    if not sid:
+        return False
+    with _ENTRY_LOCK:
+        if sid in _ENTRY_STREAMS:
+            return True
+    if not _arm_entry_pressure():
+        return False
+    with _ENTRY_LOCK:
+        if sid not in _ENTRY_STREAMS:
+            if len(_ENTRY_STREAM_ORDER) >= _ENTRY_STREAM_CAP:
+                old = _ENTRY_STREAM_ORDER.popleft()
+                _ENTRY_STREAMS.discard(old)
+            _ENTRY_STREAM_ORDER.append(sid)
+            _ENTRY_STREAMS.add(sid)
+    return True
+
+
+def _maybe_arm_default_chat(seat: dict) -> None:
+    """Catch default-chat ingress below prompt semantics; message text is irrelevant."""
+    global _LAST_DEFAULT_CHAT_SEQ
+    latest = seat.get('latest_input') if isinstance(seat.get('latest_input'), dict) else {}
+    try:
+        seq = int(latest.get('seq'))
+    except Exception:
+        return
+    source = str(latest.get('source') or '').strip().lower()
+    if source not in _DEFAULT_CHAT_SOURCES or seq == _LAST_DEFAULT_CHAT_SEQ:
+        return
+    _LAST_DEFAULT_CHAT_SEQ = seq
+    _arm_entry_pressure()
 
 
 def _response_id(reply: dict):
@@ -97,6 +169,7 @@ def observe_once(seat: dict | None = None):
     """One deterministic observer step, split out so the contract is unit-testable."""
     global _LAST_RESPONSE_ID
     seat = dict(seat or base.safe_seat())
+    _maybe_arm_default_chat(seat)
     reply = dict(seat.get('reply') or {})
     response_id = _response_id(reply)
     text_active = _text_active()
@@ -127,7 +200,7 @@ def observe_once(seat: dict | None = None):
         LATEST['reply'] = reply
         LATEST['seat'] = {
             'active_occupant': seat.get('active_occupant'), 'input_seq': seat.get('input_seq'),
-            'output_seq': seat.get('output_seq'), 'time': seat.get('time') or {},
+            'output_seq': seat.get('output_seq'), 'urgency': _urgency(),
         }
         LATEST['acoustic'] = FIELD.snapshot()
         LATEST['at'] = time.time()
@@ -150,11 +223,28 @@ def observer_worker():
 
 
 class FastHandler(base.Handler):
-    server_version = 'ArchiePhoneFast/1'
+    server_version = 'ArchiePhoneFast/2'
 
     def _ndjson(self, value: dict):
         self.wfile.write(base._json_bytes(value) + b'\n')
         self.wfile.flush()
+
+    def _sanitized_state(self):
+        seat = base.safe_seat()
+        seat.pop('time', None)
+        seat['urgency'] = _urgency()
+        with base.LOCK:
+            bus = {
+                'active': bool(base.BUS.get('text_active')), 'event': base.BUS.get('event'),
+                'revision': base.BUS.get('revision'), 'audio_seq': base.BUS.get('audio_seq'),
+                'transport_revision': base.BUS.get('transport_revision'),
+                'last_controller_ok': base.BUS.get('last_controller_ok'),
+            }
+            scene = dict(base.SCENE)
+        return {
+            'ok': True, 'seat': seat, 'bus': bus, 'event': bus.get('event'), 'scene': scene,
+            'geometry': base.screen_geometry(), 'selftest': base.SELFTEST, 'at': time.time(),
+        }
 
     def do_GET(self):
         path = urlparse(self.path).path
@@ -194,10 +284,43 @@ class FastHandler(base.Handler):
                 return
             self.sendb(200, base._json_bytes({'ok': True, **snapshot(diagnostics=True)}))
             return
+        if path == '/api/state':
+            if not self._token():
+                self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
+                return
+            self.sendb(200, base._json_bytes(self._sanitized_state()))
+            return
         return super().do_GET()
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == '/api/text-stream':
+            if not self._token():
+                self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
+                return
+            n = min(4_000_000, int(self.headers.get('Content-Length') or 0))
+            raw = self.rfile.read(n) if n else b''
+            try:
+                value = json.loads(raw.decode('utf-8', 'replace') or '{}')
+            except Exception:
+                value = {}
+            sid = str(value.get('stream_id') or '')[:120]
+            if not sid:
+                self.sendb(400, b'{"ok":false,"error":"stream_id"}')
+                return
+            if not _arm_text_stream(sid):
+                self.sendb(503, b'{"ok":false,"error":"entry_pressure"}')
+                return
+            self.rfile = io.BytesIO(raw)
+            return super().do_POST()
+        if path == '/api/audio':
+            if not self._token():
+                self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
+                return
+            if not _urgency() and not _arm_entry_pressure():
+                self.sendb(503, b'{"ok":false,"error":"entry_pressure"}')
+                return
+            return super().do_POST()
         if path == '/api/voice-state':
             if not self._token():
                 self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
@@ -208,7 +331,11 @@ class FastHandler(base.Handler):
                 value = json.loads(raw.decode('utf-8', 'replace') or '{}')
             except Exception:
                 value = {}
-            snap = set_voice_active(bool(value.get('active')))
+            active = bool(value.get('active'))
+            if active and not _arm_entry_pressure():
+                self.sendb(503, b'{"ok":false,"error":"entry_pressure"}')
+                return
+            snap = set_voice_active(active)
             self.sendb(200, base._json_bytes({'ok': True, **snap}))
             return
         return super().do_POST()
