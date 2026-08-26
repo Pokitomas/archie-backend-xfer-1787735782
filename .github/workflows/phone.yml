@@ -5,12 +5,12 @@ on:
     paths:
       - index.html
       - phone_bridge.py
+      - phone_scene.json
+      - phone_selftest.py
       - .github/workflows/phone.yml
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,27 +19,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m py_compile phone_bridge.py
-      - name: Static contract
+      - name: Python syntax
+        run: python -m py_compile phone_bridge.py phone_selftest.py
+      - name: Bridge contract
+        run: python phone_selftest.py
+      - name: Static shell contract
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
           s=Path('index.html').read_text(encoding='utf-8')
-          assert 'text-stream' in s and 'screen.mjpg' in s and 'liveStyle' in s
+          required=['/api/selftest','recoverForever','text-stream','screen.mjpg','applyScene','/api/pointer','liveStyle']
+          assert all(x in s for x in required), [x for x in required if x not in s]
           assert 'vercel.app' not in s.lower()
-          print('phone field static contract ok', len(s))
+          assert 'id="fallback"' not in s and 'id="retry"' not in s
+          scripts=re.findall(r'<script>(.*?)</script>',s,re.S)
+          assert len(scripts)==1
+          Path('/tmp/phone.js').write_text(scripts[0],encoding='utf-8')
+          print('static shell contract ok',len(s),len(scripts[0]))
           PY
-  pages:
-    needs: test
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Browser script syntax
+        run: node --check /tmp/phone.js
