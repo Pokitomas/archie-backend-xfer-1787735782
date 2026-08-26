@@ -71,7 +71,7 @@ jobs:
               assert word not in core, word
           assert "path == '/api/field.ndjson'" in field and "path != '/api/field'" in field
           assert "_ADAPTERS.get(shape)" in field
-          assert 'py_compile' in boot and 'run_selftest' in boot and 'candidate-refused' in boot
+          assert 'py_compile' in boot and 'run_selftest' in boot and 'candidate-refused' in boot and 'Wait-FieldHealth' in boot
           scene=json.loads(Path('phone_scene.json').read_text(encoding='utf-8'))
           feat=scene.get('features',{})
           assert int(scene.get('revision',0)) >= 5
@@ -88,3 +88,8 @@ jobs:
           PY
       - name: Browser script syntax
         run: node --check field_client.js
+      - name: Windows bootstrap syntax
+        shell: pwsh
+        run: |
+          $null = [scriptblock]::Create((Get-Content -Raw field_bootstrap.ps1))
+          Write-Host 'bootstrap parse ok'
