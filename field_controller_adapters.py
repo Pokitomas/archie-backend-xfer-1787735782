@@ -8,6 +8,15 @@ from typing import Callable
 from field_transport import FieldTransport
 
 
+_CALL_LOCK = threading.RLock()
+_CALLS: dict[str, dict] = {}
+
+
+def reset_state() -> None:
+    with _CALL_LOCK:
+        _CALLS.clear()
+
+
 def install(register: Callable, *, base, arm_stream: Callable[[str], bool], project_aperture: Callable[..., None]) -> None:
     """Install optional machine interpretations onto a modality-blind field.
 
@@ -15,9 +24,6 @@ def install(register: Callable, *, base, arm_stream: Callable[[str], bool], proj
     valid field events. This module is the replaceable boundary where a current
     controller happens to understand a few concrete shapes.
     """
-    call_lock = threading.RLock()
-    calls: dict[str, dict] = {}
-
     def ok(value) -> bool:
         return isinstance(value, dict) and bool(value.get('ok', True)) and not value.get('error')
 
@@ -51,11 +57,11 @@ def install(register: Callable, *, base, arm_stream: Callable[[str], bool], proj
             opened = base.jpost('/phone/audio/begin', {'client_started_ms': payload.get('client_started_ms')}, 2.0)
             if not ok(opened):
                 return {'ok': False, 'error': 'contact_begin', 'controller': opened}
-            with call_lock:
-                calls[stream] = {'call_id': str(opened.get('call_id') or ''), 'opened': time.monotonic()}
+            with _CALL_LOCK:
+                _CALLS[stream] = {'call_id': str(opened.get('call_id') or ''), 'opened': time.monotonic()}
             return {'ok': True, 'active': True, 'call_id': opened.get('call_id'), 'ack': opened.get('ack')}
-        with call_lock:
-            current = dict(calls.get(stream) or {})
+        with _CALL_LOCK:
+            current = dict(_CALLS.get(stream) or {})
         return {'ok': True, 'active': False, 'call_id': current.get('call_id')}
 
     @register('audio/pcm;codec=s16le')
@@ -78,8 +84,8 @@ def install(register: Callable, *, base, arm_stream: Callable[[str], bool], proj
             rate = int(meta.get('rate') or 16000)
         except Exception:
             rate = 16000
-        with call_lock:
-            call = dict(calls.get(stream) or {})
+        with _CALL_LOCK:
+            call = dict(_CALLS.get(stream) or {})
         call_id = str(meta.get('call_id') or call.get('call_id') or '')
         preview = bool(meta.get('preview')) and not bool(event.get('final'))
         path = '/phone/audio/preview' if preview else '/phone/audio'
@@ -88,8 +94,8 @@ def install(register: Callable, *, base, arm_stream: Callable[[str], bool], proj
             body['speech_evidence'] = meta['speech_evidence']
         accepted = base.jpost(path, body, 3.0)
         if not preview and call_id:
-            with call_lock:
-                calls.pop(stream, None)
+            with _CALL_LOCK:
+                _CALLS.pop(stream, None)
         return {'ok': ok(accepted), 'accepted': accepted, 'preview': preview, 'call_id': call_id}
 
     @register('application/vnd.archie.action+json')
