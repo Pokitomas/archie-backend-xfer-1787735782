@@ -20,7 +20,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m py_compile phone_bridge.py
-      - run: python - <<'PY'
+      - name: Static contract
+        run: |
+          python - <<'PY'
           from pathlib import Path
           s=Path('index.html').read_text(encoding='utf-8')
           assert 'text-stream' in s and 'screen.mjpg' in s and 'liveStyle' in s
