@@ -1,22 +1,18 @@
 {
-  "revision": 6,
-  "css": "#root{background:#010203}#screen{background:#010203;filter:saturate(.82) contrast(1.045) brightness(.93)}.scene-primary{left:5.2vw;right:7vw;top:14.8vh;max-height:43vh;font:470 clamp(15px,2.15vw,19px)/1.43 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.028em;color:rgba(239,244,246,.94);text-shadow:0 1px 16px rgba(0,0,0,.92);mask-image:linear-gradient(180deg,#000 0,#000 90%,transparent 100%);-webkit-mask-image:linear-gradient(180deg,#000 0,#000 90%,transparent 100%)}.scene-machine{left:5.2vw;right:7vw;bottom:calc(24vh + env(safe-area-inset-bottom));font:8px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.075em;color:rgba(226,234,237,.3);white-space:nowrap;text-overflow:ellipsis}.scene-activity-kind{left:5.2vw;bottom:calc(35.1vh + env(safe-area-inset-bottom));font:7px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;color:rgba(226,234,237,.18);text-transform:uppercase}.scene-activity-label{left:5.2vw;right:7vw;bottom:calc(32.5vh + env(safe-area-inset-bottom));font:9px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;color:rgba(231,238,240,.34);white-space:nowrap;text-overflow:ellipsis}.scene-activity-detail{left:5.2vw;right:7vw;bottom:calc(29.8vh + env(safe-area-inset-bottom));font:7.5px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;color:rgba(226,234,237,.22);white-space:nowrap;text-overflow:ellipsis}.scene-latency{right:4.8vw;top:7.8vh;font:8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.13em;color:rgba(232,239,241,.22)}.scene-state{left:5vw;top:7.8vh;font:8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.17em;color:rgba(232,239,241,.23)}.scene-contact{left:5.4vw;bottom:calc(14.3vh + env(safe-area-inset-bottom));font:8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.11em;color:rgba(242,247,248,.4)}",
+  "revision": 7,
+  "css": "#root{background:#010203}#screen{background:#010203;filter:saturate(.8) contrast(1.045) brightness(.93)}.scene-primary{left:5.1vw;right:6.8vw;top:14.6vh;max-height:44vh;font:470 clamp(15px,2.15vw,19px)/1.43 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.028em;color:rgba(239,244,246,.94);text-shadow:0 1px 16px rgba(0,0,0,.92);mask-image:linear-gradient(180deg,#000 0,#000 91%,transparent 100%);-webkit-mask-image:linear-gradient(180deg,#000 0,#000 91%,transparent 100%)}.scene-focus{left:5.1vw;right:7vw;bottom:calc(23.7vh + env(safe-area-inset-bottom));font:7.5px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.055em;color:rgba(228,235,238,.25);white-space:nowrap;text-overflow:ellipsis}.scene-phase{left:5.1vw;bottom:calc(34.6vh + env(safe-area-inset-bottom));font:7px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.18em;color:rgba(231,238,240,.18)}.scene-action{left:5.1vw;right:7vw;bottom:calc(31.8vh + env(safe-area-inset-bottom));font:9px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.01em;color:rgba(234,240,242,.34);white-space:nowrap;text-overflow:ellipsis}.scene-intent{left:5.1vw;right:7vw;bottom:calc(28.9vh + env(safe-area-inset-bottom));font:7.5px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.01em;color:rgba(228,235,238,.22);white-space:nowrap;text-overflow:ellipsis}.scene-state{left:5.1vw;top:7.7vh;font:8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.2em;color:rgba(235,241,243,.25)}.scene-latency{right:5vw;top:7.7vh;font:8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;color:rgba(235,241,243,.2)}.scene-ready{left:8.1vw;top:7.7vh;font:8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:rgba(235,241,243,.16)}.scene-contact{left:6.2vw;bottom:calc(14.3vh + env(safe-area-inset-bottom));font:8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;color:rgba(242,247,248,.38)}",
   "layers": [
-    {"id":"primary","bind":"field.controller.primary.payload.reply.text","class":"scene-primary","hideEmpty":true},
-    {"id":"machine","bind":"field.machine.state.payload.focus","class":"scene-machine","hideEmpty":true},
-    {"id":"activity-kind","bind":"field.controller.activity.payload.items.0.kind","class":"scene-activity-kind","hideEmpty":true},
-    {"id":"activity-label","bind":"field.controller.activity.payload.items.0.label","class":"scene-activity-label","hideEmpty":true},
-    {"id":"activity-detail","bind":"field.controller.activity.payload.items.0.detail","class":"scene-activity-detail","hideEmpty":true},
+    {"id":"primary","bind":"field.controller.state.payload.sensors.seat.reply.text","class":"scene-primary","hideEmpty":true},
+    {"id":"focus","bind":"field.controller.state.payload.field.field.title","class":"scene-focus","hideEmpty":true},
+    {"id":"phase","bind":"field.controller.state.payload.events","last":true,"pick":"phase","class":"scene-phase","hideEmpty":true},
+    {"id":"action","bind":"field.controller.state.payload.events","last":true,"pick":"action","class":"scene-action","hideEmpty":true},
+    {"id":"intent","bind":"field.controller.state.payload.events","last":true,"pick":"intent","class":"scene-intent","hideEmpty":true},
+    {"id":"state","bind":"status","class":"scene-state","map":{"cold":"0","recovering":"·","live":"1"},"hideEmpty":false},
+    {"id":"ready","bind":"field.machine.readiness.payload.ready","class":"scene-ready","map":{"true":"✓","false":"×"},"hideEmpty":true},
     {"id":"latency","bind":"latency","class":"scene-latency","prefix":"τ ","hideEmpty":true},
-    {"id":"state","bind":"status","class":"scene-state","map":{"cold":"·","recovering":"⟳","live":"∴"},"hideEmpty":false},
     {"id":"contact","bind":"control.held","class":"scene-contact","map":{"true":"∷","false":""},"hideEmpty":true}
   ],
-  "nodes": [
-    {"kind":"grid","x":0.087,"y":0.116,"cols":4,"rows":4,"sx":0.009,"sy":0.007,"r":0.00125,"fill":"rgba(242,247,248,.19)"},
-    {"kind":"grid","x":0.914,"y":0.116,"cols":2,"rows":2,"sx":0.008,"sy":0.006,"r":0.0011,"fill":"rgba(242,247,248,.1)"},
-    {"kind":"ring","x":0.087,"y":0.887,"r":0.015,"stroke":"rgba(242,247,248,.2)","line":0.7,"when":"control.held"},
-    {"kind":"disc","x":0.087,"y":0.887,"r":0.0027,"fill":"rgba(242,247,248,.76)","when":"control.held"}
-  ],
+  "nodes": [],
   "features": {
     "fieldProtocol": true,
     "arbitraryChannels": true,
@@ -32,6 +28,8 @@
     "clientOutputActuation": false,
     "activityProjection": true,
     "controllerActionParity": true,
-    "desktopPresencePulse": true
+    "desktopPresencePulse": true,
+    "sceneSelectsCanonicalState": true,
+    "decorativeGeometry": false
   }
 }
