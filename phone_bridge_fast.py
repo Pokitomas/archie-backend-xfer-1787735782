@@ -15,13 +15,7 @@ FAST_COND = threading.Condition(FAST_LOCK)
 FIELD = AcousticField(min_chars=4, max_phrase_chars=96, resume_guard_ms=64)
 GESTURES = deque(maxlen=256)
 VOICE_ACTIVE = False
-LATEST = {
-    'serial': 0,
-    'reply': {},
-    'seat': {},
-    'acoustic': FIELD.snapshot(),
-    'at': 0.0,
-}
+LATEST = {'serial': 0, 'reply': {}, 'seat': {}, 'acoustic': FIELD.snapshot(), 'at': 0.0}
 _LAST_RESPONSE_ID = None
 
 
@@ -50,20 +44,36 @@ def _append_gestures_locked(items):
     changed = False
     for item in items or ():
         GESTURES.append({
-            'seq': item.seq,
-            'generation': item.generation,
-            'revision': item.revision,
-            'kind': item.kind,
-            'start': item.start,
-            'end': item.end,
-            'pace': item.pace,
-            'pressure': item.pressure,
-            'contour': item.contour,
-            'continuity': item.continuity,
+            'seq': item.seq, 'generation': item.generation, 'revision': item.revision,
+            'kind': item.kind, 'start': item.start, 'end': item.end, 'pace': item.pace,
+            'pressure': item.pressure, 'contour': item.contour, 'continuity': item.continuity,
             'reason': item.reason,
         })
         changed = True
     return changed
+
+
+def _snapshot_locked(*, text_active: bool | None = None, diagnostics: bool = True):
+    if text_active is None:
+        text_active = _text_active()
+    value = {
+        'serial': int(LATEST.get('serial') or 0),
+        'reply': dict(LATEST.get('reply') or {}),
+        'seat': dict(LATEST.get('seat') or {}),
+        'acoustic': dict(FIELD.snapshot()),
+        'voice_active': bool(VOICE_ACTIVE),
+        'text_active': bool(text_active),
+        'at': float(LATEST.get('at') or 0.0),
+    }
+    if diagnostics:
+        value['gestures'] = list(GESTURES)[-24:]
+    return value
+
+
+def snapshot(*, diagnostics: bool = True):
+    text_active = _text_active()
+    with FAST_LOCK:
+        return _snapshot_locked(text_active=text_active, diagnostics=diagnostics)
 
 
 def set_voice_active(active: bool):
@@ -80,28 +90,7 @@ def set_voice_active(active: bool):
             LATEST['acoustic'] = FIELD.snapshot()
             LATEST['at'] = time.time()
             FAST_COND.notify_all()
-        return _snapshot_locked(text_active=text_active)
-
-
-def _snapshot_locked(*, text_active: bool | None = None):
-    if text_active is None:
-        text_active = _text_active()
-    return {
-        'serial': int(LATEST.get('serial') or 0),
-        'reply': dict(LATEST.get('reply') or {}),
-        'seat': dict(LATEST.get('seat') or {}),
-        'acoustic': dict(FIELD.snapshot()),
-        'gestures': list(GESTURES)[-24:],
-        'voice_active': bool(VOICE_ACTIVE),
-        'text_active': bool(text_active),
-        'at': float(LATEST.get('at') or 0.0),
-    }
-
-
-def snapshot():
-    text_active = _text_active()
-    with FAST_LOCK:
-        return _snapshot_locked(text_active=text_active)
+        return _snapshot_locked(text_active=text_active, diagnostics=True)
 
 
 def observe_once(seat: dict | None = None):
@@ -117,7 +106,6 @@ def observe_once(seat: dict | None = None):
         gestures = []
         if user_active != FIELD.user_active:
             gestures.extend(FIELD.set_user_active(user_active))
-
         if response_id is not None and _LAST_RESPONSE_ID is not None and response_id != _LAST_RESPONSE_ID:
             gestures.extend(FIELD.supersede())
         if response_id is not None:
@@ -131,26 +119,22 @@ def observe_once(seat: dict | None = None):
 
         old_reply = LATEST.get('reply') or {}
         changed = (
-            old_reply.get('text') != reply.get('text')
-            or old_reply.get('done') != reply.get('done')
-            or old_reply.get('revision') != reply.get('revision')
-            or old_reply.get('seq') != reply.get('seq')
+            old_reply.get('text') != reply.get('text') or old_reply.get('done') != reply.get('done')
+            or old_reply.get('revision') != reply.get('revision') or old_reply.get('seq') != reply.get('seq')
             or bool(gestures)
         )
         _append_gestures_locked(gestures)
         LATEST['reply'] = reply
         LATEST['seat'] = {
-            'active_occupant': seat.get('active_occupant'),
-            'input_seq': seat.get('input_seq'),
-            'output_seq': seat.get('output_seq'),
-            'time': seat.get('time') or {},
+            'active_occupant': seat.get('active_occupant'), 'input_seq': seat.get('input_seq'),
+            'output_seq': seat.get('output_seq'), 'time': seat.get('time') or {},
         }
         LATEST['acoustic'] = FIELD.snapshot()
         LATEST['at'] = time.time()
         if changed:
             LATEST['serial'] = int(LATEST.get('serial') or 0) + 1
             FAST_COND.notify_all()
-        return _snapshot_locked(text_active=text_active)
+        return _snapshot_locked(text_active=text_active, diagnostics=True)
 
 
 def observer_worker():
@@ -192,7 +176,7 @@ class FastHandler(base.Handler):
                         if current == serial and now - last_heartbeat < 8.0:
                             FAST_COND.wait(timeout=0.8)
                             continue
-                    snap = snapshot()
+                    snap = snapshot(diagnostics=False)
                     current = int(snap.get('serial') or 0)
                     now = time.time()
                     if current != serial:
@@ -208,7 +192,7 @@ class FastHandler(base.Handler):
             if not self._token():
                 self.sendb(401, b'{"ok":false,"error":"unauthorized"}')
                 return
-            self.sendb(200, base._json_bytes({'ok': True, **snapshot()}))
+            self.sendb(200, base._json_bytes({'ok': True, **snapshot(diagnostics=True)}))
             return
         return super().do_GET()
 
