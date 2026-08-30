@@ -10,20 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Introspect live phone bridge
+      - name: Read live controller through surviving phone bridge
         shell: bash
         run: |
           set -u
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/'
-          curl -k -L --max-time 10 -sS "$root" -o /tmp/index.html
-          echo '=== SCRIPT SOURCES ==='
-          grep -oE '<script[^>]+src="[^"]+"' /tmp/index.html | sed -E 's/.*src="([^"]+)".*/\1/' | tee /tmp/scripts.txt || true
-          echo '=== INLINE ROUTE HINTS ==='
-          grep -nEi 'fetch\(|WebSocket|EventSource|/action|/health|/state|/window|/seat|/cmd|/shell|token|POST' /tmp/index.html | head -200 || true
-          while IFS= read -r src; do
-            [ -n "$src" ] || continue
-            url="$root${src#./}"
-            echo "=== JS $url ==="
-            curl -k -L --max-time 10 -sS "$url" -o /tmp/app.js || continue
-            grep -nEi 'fetch\(|WebSocket|EventSource|/action|/health|/state|/window|/seat|/cmd|/shell|token|POST|clipboard|hotkey|key|click|type' /tmp/app.js | head -350 || true
-          done < /tmp/scripts.txt
+          echo '=== WELL KNOWN ==='
+          curl -k -L --max-time 10 -sS "$root.well-known/archie-phone.json" || true
+          echo
+          echo '=== CONTROLLER READ ==='
+          curl -k -L --max-time 15 -sS \
+            -H 'content-type: application/json' \
+            --data '{"action":"controller.read"}' \
+            "$root/v1/action" || true
+          echo
