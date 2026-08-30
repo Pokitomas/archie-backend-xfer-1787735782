@@ -1,0 +1,29 @@
+name: ARCHIE hotwire probe
+
+on:
+  push:
+    paths:
+      - '.github/workflows/archie-hotwire-probe.yml'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Probe existing public Funnel routes
+        shell: bash
+        run: |
+          set +e
+          base='https://desktop-6fn9b4m.tail1bf489.ts.net'
+          for p in '/archie-phone' '/archie-phone/' '/archie-phone/health' '/archie-phone/state' '/'; do
+            echo "===== $p ====="
+            rm -f /tmp/h /tmp/b
+            curl -k -L --max-time 8 -sS -D /tmp/h -o /tmp/b -w '\nHTTP=%{http_code}\n' "$base$p"
+            if [ -f /tmp/h ]; then
+              sed -n '1,30p' /tmp/h | sed -E 's/^(authorization|cookie|set-cookie):.*/\1: [redacted]/Ig'
+            fi
+            if [ -f /tmp/b ]; then
+              head -c 2500 /tmp/b | tr -d '\000'
+              echo
+            fi
+          done
