@@ -13,20 +13,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Invoke timeline selector
+      - name: Select safe timeline and jump to fuchsia cluster
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
           call(){ n="$1"; b="$2"; curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data "$b" "$root" > "/tmp/archie-hotwire/$n.json" || true; }
-          call selector '{"action":"controller.action","spec":{"action":"poke","hwnd":32442934,"said":"ARCHIE // TIGHT 15 v3","kind":"Button","how":"invoke","agent":"gpt56sol-hotwire","role":"execute","intent":"open timeline selector semantically"}}'
+          call select '{"action":"controller.action","spec":{"action":"tap","x":1000,"y":323,"agent":"gpt56sol-hotwire","role":"execute","intent":"select ARCHIE GPT PASS 01 safe timeline"}}'
           sleep 1
-          call shot '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see open timeline list"}}'
-          call windows '{"action":"controller.action","spec":{"action":"windows","limit":80,"agent":"gpt56sol-hotwire","role":"measure","intent":"find timeline popup if separate"}}'
-      - name: Upload selector
+          call verify '{"action":"controller.action","spec":{"action":"inspect","limit":180,"agent":"gpt56sol-hotwire","role":"measure","intent":"verify GPT PASS 01 active"}}'
+          call home '{"action":"controller.action","spec":{"action":"key","key":"home","agent":"gpt56sol-hotwire","role":"execute","intent":"go to start of safe timeline before marker navigation"}}'
+          sleep 1
+          for i in 1 2 3 4 5 6; do
+            call "m$i" '{"action":"controller.action","spec":{"action":"hotkey","keys":["shift","down"],"agent":"gpt56sol-hotwire","role":"execute","intent":"advance to next timeline marker"}}'
+            sleep 0.25
+          done
+          call shot '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see fuchsia marker cluster on safe timeline"}}'
+          call inspect2 '{"action":"controller.action","spec":{"action":"inspect","limit":240,"agent":"gpt56sol-hotwire","role":"measure","intent":"inspect fuchsia cluster controls and timecode"}}'
+      - name: Upload marker state
         uses: actions/upload-artifact@v4
         with:
-          name: archie-timeline-popup
+          name: archie-fuchsia-marker-state
           path: /tmp/archie-hotwire
           retention-days: 1
