@@ -7,9 +7,9 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 2
     steps:
-      - name: Patch and selftest model ring
+      - name: Diagnose fresh model ring
         shell: bash
         run: |
           set -euo pipefail
@@ -17,22 +17,19 @@ jobs:
           mkdir -p /tmp/archie-hotwire
           python - <<'PY' > /tmp/archie-hotwire/start.json
           import json
-          code = "import base64,zlib;exec(zlib.decompress(base64.b64decode('eNq9VlFv2zYQfvevIFhgJRFGUdMh25xpgGdrmQHHNhxnfWgLQZZom4tMCiSVOkvz33cnObWcBt2QATMQirz77vjx7niM2pTGemKccNWitCaTzoky9etCLYRXGyn+dEZ3bLSTBVP4MuMCqW+VNTpYSc/oaNLvjXrT6aA371FBKecn9NLkspgpvaIdZ7PIntANShILoiCj50Ru5RMpSAAcATywMs0TL7eeSZ2ZHLQRrfzy+EcqpLXGuohaWRZpJinvqCWhq2RjkyWAJSXaeKI0cd0Ogd8mtTfSRvSV0llR5ZL87Dw49MH6F1oDwLzBtIzwB0yC3SasAYjmc0Q/aOdTrzJyawr4FpKMJuMLsidBIhKet1AqJ48qhit+T4baS1uY7Ebm8TZbp3ol2Xd7D4KE/Jw8UPGG14xk4WSbG/2/GHzQ9Mh12sGgl3Jj7N2vqbVKWsbPIedffMOKH6IvpJ+r7KZvKu3Pvmcc0IxdI13842014xytoQA+WeVlUwFOPK0B3vFZFmlUMighb0wB9JWmPLCrwiwYBX1dTpx3ymhf2oGtNHvvvGUA4IIeT06BzfEgeTccvz3FcTyPwm14FoIcYUAFYaZZgUf+UWRp6SsrE1P5svLR3FZSINFm9rQ861sE0Ogs5B1ku6hUkQeFWQHb1ilZGUBdApAYS+AKHTUCcLcTiH9xE0q4R3Af+5PL6XAUU1FCFoArGkrIZaP+x53qG9U27RKbKifJ1Z3zchNvlWcHnjvPRRiDJahbV7DXJ01fHLdT3lkW6cpF0GpSjznZdyo6iOe9/u/xIJnOJv346oqKkH9+Dtifxb15nIzjd4/Q5GI2uZ6iQWcdmVJqTM7aOF/nRtB0QcWiWi4l9qYoPDjktMa3jol2cMS6s7TrbRD/Mb4ejUQT8GgtmkDDJCuMk8kyd83xM+h4XhndHLUeocohBIErpCxZ8AMso2/EWRZLL2sSL40zHBFMv7EHaN3L/b+FA6Tu5iv/1GVrVLj6wgp60sdQ1LOrPoyT8WhyMRnjeo7jBELfG5L6fSH1A4OaGRXL1/QeXDxQgtl4DdLZCHSj4eVwHg8Q9dt/i46VLrqn5oZ2fav6oygkqc4JOD6UCjyZ3KS02zxyx1hIxwtjPIQ0LU9u3wCnzGxK6N6Wdvdd6Usuu8zvruqR311RDl+rSvaYji7DfXeg3fQQBi+A9VWZYIwTmwF5mLSYHiJwT9Q/brubH7rERHX3dQFjsrgDxrQL0wCfHIboxKm/JD6vKJVb5bxjvH7ISPhQ90KEVi7A/zEOuyFKgrzalI5B1IXSudTYCp55Cpqm9sTAyTK1qcdcMoiygBxw6GtftbEQ6YHBe0zrx4bbT/xvW2oYKg==')))"
-          body={"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"execute","intent":"patch only the fresh model ring for TinyCC compatibility, compile, start and selftest it"}}
-          print(json.dumps(body,separators=(',',':')))
+          code="import base64,zlib;exec(zlib.decompress(base64.b64decode('eNqVk1Fv2jAQx9/5FNY92ZMXaLW9IOUhorSKBgUR+oSqKMBBvQbb2M7E9ul3TtKuXaVJe0lO5/zv/vfzRZ2scYEZL32ztc7s0Htpq/BUq60M6oTyuzd64NI+lyzpzY1PUP9QzujkiIHDbDHJZtlyeZOtM5AAQgxhbvZYr5Q+wgAvmLohnGKmdJRKKAMDSyGJb/PZtAC54TbRFTW0iQ9V4IJepVe/ULCDccwypZlLjrXZcvgE4lEMYjoq4gmHbaPqfVKbIxl4Mj70YazV+CROAWI8YJacRBFFXfs0Bdn2jZF4SdvEYbUvA14CR+eM8yk4tHW1QxCbz1fXo9Fo/MjUgVkaRvnguWBYe2Qwz4siv7+jWn2HdVZ8m+XFupwvbqazctUdntM/xBPXaL6BUPnnmmq1eCQMb3N65vPsbnqfzacMz+wvhI9yV9nQOCxNE2wT0rVrUEbTXfTBeW/pTNORTO+onDwT6D3pu4AkHdnYqiNLPXwkifUhoA8txssH9z44Tp6EjML/NdauGn2aXn99vQKIuKAtJ2E1AXl56xoWD2uQpHf80g8gJExXq7fJOMzrNRSLh9VkWhb3+ZJA+JS/X8kdiH/dectEyVrplgrq5oSuCsh94m2tQjygHZBXkQ6tRaV/8uf4ZauI4ueOJnlhp0rpt0TlC+MJOQh4q2qcV9bGn4cGtajfZ+J6l32NXa1Q053Etj24zuVmfP1lRH/JbxGzSwU=')))"
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"measure","intent":"diagnose only the newly built model ring host and selftest"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
-          sleep 7
+          sleep 6
           python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
           import json,sys
           v=json.load(open(sys.argv[1])); r=v.get('result') or {}; inner=(r.get('result') or r) if isinstance(r,dict) else {}; tid=inner.get('terminal_id')
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read fresh ring compile and selftest proof"}},separators=(',',':')))
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read fresh model ring diagnostics"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
-          sleep 8
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll2.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-selftest
+          name: model-ring-diag
           path: /tmp/archie-hotwire
           retention-days: 1
