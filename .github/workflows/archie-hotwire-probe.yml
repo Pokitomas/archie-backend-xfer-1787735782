@@ -13,30 +13,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Capture live bridge client contract
+      - name: Capture action client
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/'
           mkdir -p /tmp/archie-hotwire
-          curl -k -L --max-time 15 -sS "$root" > /tmp/archie-hotwire/index.html
+          curl -k -L --max-time 20 -sS "${root}hands.js?v=97" > /tmp/archie-hotwire/hands.js
           curl -k -L --max-time 15 -sS "$root.well-known/archie-phone.json" > /tmp/archie-hotwire/well-known.json
-          grep -Eo '<script[^>]+src=["'"'][^"'"']+' /tmp/archie-hotwire/index.html | sed -E 's/.*src=["'"']//' > /tmp/archie-hotwire/script-paths.txt || true
-          while IFS= read -r p; do
-            [ -n "$p" ] || continue
-            case "$p" in
-              http*) u="$p" ;;
-              /*) u="https://desktop-6fn9b4m.tail1bf489.ts.net$p" ;;
-              *) u="$root$p" ;;
-            esac
-            out="/tmp/archie-hotwire/$(basename "${p%%\?*}")"
-            curl -k -L --max-time 15 -sS "$u" > "$out" || true
-          done < /tmp/archie-hotwire/script-paths.txt
           wc -c /tmp/archie-hotwire/*
       - name: Upload private client artifact
         uses: actions/upload-artifact@v4
         with:
-          name: archie-hotwire-client
+          name: archie-hotwire-client-js
           path: /tmp/archie-hotwire
           retention-days: 1
           if-no-files-found: error
