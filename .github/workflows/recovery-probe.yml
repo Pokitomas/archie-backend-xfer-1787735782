@@ -7,21 +7,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
-      - name: Query surviving bridge-local capability plane
+      - name: Exercise surviving desktop key and screen surfaces
         shell: bash
         run: |
           set -u
-          out=/tmp/recovery-probe
-          mkdir -p "$out"
-          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          for action in status.read signal.read driver.read field.read phone.capabilities ios.inventory; do
-            n=${action//./_}
-            python - "$action" <<'PY' > "$out/$n.request.json"
-          import json,sys
-          print(json.dumps({'action':sys.argv[1],'spec':{}},separators=(',',':')))
-          PY
-            curl -k -L --connect-timeout 5 --max-time 18 -sS -H 'content-type: application/json' --data-binary @"$out/$n.request.json" "$root" > "$out/$n.result.json"; echo $? > "$out/$n.rc"
-          done
+          out=/tmp/recovery-probe; mkdir -p "$out"
+          base='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone'
+          root="$base/v1/action"
+          for p in shot screen v1/screen; do n=${p//\//_}; curl -k -L --connect-timeout 5 --max-time 12 -sS -D "$out/$n.headers" "$base/$p" -o "$out/$n.body"; echo $? > "$out/$n.rc"; done
+          cat > "$out/key-spec.json" <<'EOF'
+          {"action":"desktop.key","spec":{"key":"shift"}}
+          EOF
+          cat > "$out/key-flat.json" <<'EOF'
+          {"action":"desktop.key","key":"shift"}
+          EOF
+          for n in key-spec key-flat; do curl -k -L --connect-timeout 5 --max-time 18 -sS -H 'content-type: application/json' --data-binary @"$out/$n.json" "$root" > "$out/$n.result.json"; echo $? > "$out/$n.rc"; done
           true
       - uses: actions/upload-artifact@v4
         with:
