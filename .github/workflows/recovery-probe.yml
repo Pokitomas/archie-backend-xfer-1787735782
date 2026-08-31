@@ -11,65 +11,21 @@ jobs:
         shell: bash
         run: |
           set +e
-          out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
+          out=/tmp/recovery-probe
+          rm -rf "$out"
+          mkdir -p "$out"
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-
-          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' \
-            --data '{"action":"controller.read"}' "$root" > "$out/ring-state-before.json"
-
-          python - <<'PY' > "$out/backend-command.json"
-          import json
-          script=r'''OUT='/mnt/c/Users/AwesomeKai/Documents/New project/tmp/gpt56_ring_backend.txt'
-mkdir -p "$(dirname "$OUT")"
-{
-  echo '=== GPT56 RING BACKEND INSPECTION ==='
-  date -Ins
-  echo
-  echo '=== HOST ==='
-  hostname; id; uname -a
-  echo
-  echo '=== RUNNING ARCHIE/RESOLVE SERVICES ==='
-  systemctl --user --no-pager --type=service --state=running 2>&1 | grep -Eia 'archie|resolve|sidecar|controller|postchat|train|crawl|resident|seat' || true
-  echo
-  echo '=== RELEVANT PROCESSES ==='
-  ps -eo pid,ppid,etimes,%cpu,%mem,cmd --sort=-%cpu 2>&1 | grep -Eia 'archie|resolve|train|crawl|resident|sidecar|controller|python|node' | grep -v grep | head -120 || true
-  echo
-  echo '=== LISTENERS ==='
-  ss -ltnp 2>&1 | grep -E ':(8789|8791|8798|8799|8811|8901)\\b' || true
-  echo
-  echo '=== GPU ==='
-  nvidia-smi 2>&1 || true
-  echo
-  echo '=== CONTROLLER/SEAT LOCAL HEALTH ==='
-  for u in http://127.0.0.1:8798/health http://127.0.0.1:8798/seat/head http://127.0.0.1:8799/health http://127.0.0.1:8789/health http://127.0.0.1:8791/health; do
-    echo "--- $u"; curl -fsS --max-time 3 "$u" 2>&1 || true; echo
-  done
-  echo
-  echo '=== RECENT ARCHIE FILES ==='
-  find /home/awesomekai -maxdepth 3 -type f \
-    \( -iname '*receipt*.json*' -o -iname '*state*.json' -o -iname '*lease*.json' -o -iname '*checkpoint*.pt' -o -iname '*halt*.json' \) \
-    -printf '%T@ %TY-%Tm-%TdT%TH:%TM:%TS %s %p\\n' 2>/dev/null | sort -nr | head -80 || true
-} > "$OUT" 2>&1
-'''
-          body={'action':'controller.action','spec':{'action':'native_terminal','op':'start','argv':[r'C:\\Windows\\System32\\wsl.exe','-e','bash','-lc',script],'agent':'gpt56sol-ring','role':'measure','intent':'read live backend from inside the resident ring without mutating it'}}
-          print(json.dumps(body,separators=(',',':')))
-          PY
+          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data '{"action":"controller.read"}' "$root" > "$out/ring-state-before.json"
+          SCRIPT_B64='T1VUPScvbW50L2MvVXNlcnMvQXdlc29tZUthaS9Eb2N1bWVudHMvTmV3IHByb2plY3QvdG1wL2dwdDU2X3JpbmdfYmFja2VuZC50eHQnCm1rZGlyIC1wICIkKGRpcm5hbWUgIiRPVVQiKSIKewogIGVjaG8gJz09PSBHUFQ1NiBSSU5HIEJBQ0tFTkQgSU5TUEVDVElPTiA9PT0nCiAgZGF0ZSAtSW5zCiAgZWNobwogIGVjaG8gJz09PSBIT1NUID09PScKICBob3N0bmFtZTsgaWQ7IHVuYW1lIC1hCiAgZWNobwogIGVjaG8gJz09PSBSVU5OSU5HIEFSQ0hJRS9SRVNPTFZFIFNFUlZJQ0VTID09PScKICBzeXN0ZW1jdGwgLS11c2VyIC0tbm8tcGFnZXIgLS10eXBlPXNlcnZpY2UgLS1zdGF0ZT1ydW5uaW5nIDI+JjEgfCBncmVwIC1FaWEgJ2FyY2hpZXxyZXNvbHZlfHNpZGVjYXJ8Y29udHJvbGxlcnxwb3N0Y2hhdHx0cmFpbnxjcmF3bHxyZXNpZGVudHxzZWF0JyB8fCB0cnVlCiAgZWNobwogIGVjaG8gJz09PSBSRUxFVkFOVCBQUk9DRVNTRVMgPT09JwogIHBzIC1lbyBwaWQscHBpZCxldGltZXMsJWNwdSwlbWVtLGNtZCAtLXNvcnQ9LSVjcHUgMj4mMSB8IGdyZXAgLUVpYSAnYXJjaGllfHJlc29sdmV8dHJhaW58Y3Jhd2x8cmVzaWRlbnR8c2lkZWNhcnxjb250cm9sbGVyfHB5dGhvbnxub2RlJyB8IGdyZXAgLXYgZ3JlcCB8IGhlYWQgLTEyMCB8fCB0cnVlCiAgZWNobwogIGVjaG8gJz09PSBMSVNURU5FUlMgPT09JwogIHNzIC1sdG5wIDI+JjEgfCBncmVwIC1FICc6KDg3ODl8ODc5MXw4Nzk4fDg3OTl8ODgxMXw4OTAxKVxiJyB8fCB0cnVlCiAgZWNobwogIGVjaG8gJz09PSBHUFUgPT09JwogIG52aWRpYS1zbWkgMj4mMSB8fCB0cnVlCiAgZWNobwogIGVjaG8gJz09PSBDT05UUk9MTEVSL1NFQVQgTE9DQUwgSEVBTFRIID09PScKICBmb3IgdSBpbiBodHRwOi8vMTI3LjAuMC4xOjg3OTgvaGVhbHRoIGh0dHA6Ly8xMjcuMC4wLjE6ODc5OC9zZWF0L2hlYWQgaHR0cDovLzEyNy4wLjAuMTo4Nzk5L2hlYWx0aCBodHRwOi8vMTI3LjAuMC4xOjg3ODkvaGVhbHRoIGh0dHA6Ly8xMjcuMC4wLjE6ODc5MS9oZWFsdGg7IGRvCiAgICBlY2hvICItLS0gJHUiOyBjdXJsIC1mc1MgLS1tYXgtdGltZSAzICIkdSIgMj4mMSB8fCB0cnVlOyBlY2hvCiAgZG9uZQogIGVjaG8KICBlY2hvICc9PT0gUkVDRU5UIEFSQ0hJRSBGSUxFUyA9PT0nCiAgZmluZCAvaG9tZS9hd2Vzb21la2FpIC1tYXhkZXB0aCAzIC10eXBlIGYgXAogICAgXCggLWluYW1lICcqcmVjZWlwdCouanNvbConIC1vIC1pbmFtZSAnKnN0YXRlKi5qc29uJyAtbyAtaW5hbWUgJyp sZWFzZSouanNvbicgLW8gLWluYW1lICcqY2hlY2twb2ludCoucHQnIC1vIC1pbmFtZSAnKmhhbHQqLmpzb24nIFwpIFwKICAgIC1wcmludGYgJyVUIEAgJVRZLSVUbS0lVGRUJVVEgLUVUTTolVFMgJXMgJXBc bicgMj4vZGV2L251bGwgIHwgc29ydCAtbnIgfCBoZWFkIC04MCB8fCB0cnVlCn0gPiAiJE9VVCIgMj4mMQo='
+          export SCRIPT_B64
+          python -c 'import os,base64,json; s=base64.b64decode(os.environ["SCRIPT_B64"]).decode(); print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\\Windows\\System32\\wsl.exe","-e","bash","-lc",s],"agent":"gpt56sol-ring","role":"measure","intent":"read live backend from inside resident ring"}},separators=(",",":")))' > "$out/backend-command.json"
           curl -k -L --connect-timeout 4 --max-time 25 -sS -H 'content-type: application/json' --data-binary @"$out/backend-command.json" "$root" > "$out/backend-command-result.json"
           sleep 5
-
-          python - <<'PY' > "$out/open-report.json"
-          import json
-          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'start','argv':[r'C:\\Windows\\System32\\notepad.exe',r'C:\\Users\\AwesomeKai\\Documents\\New project\\tmp\\gpt56_ring_backend.txt'],'agent':'gpt56sol-ring','role':'measure','intent':'open backend inspection report for direct ring read'}},separators=(',',':')))
-          PY
+          python -c 'import json; print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\\Windows\\System32\\notepad.exe",r"C:\\Users\\AwesomeKai\\Documents\\New project\\tmp\\gpt56_ring_backend.txt"],"agent":"gpt56sol-ring","role":"measure","intent":"open local backend report for ring read"}},separators=(",",":")))' > "$out/open-report.json"
           curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data-binary @"$out/open-report.json" "$root" > "$out/open-report-result.json"
           sleep 3
-
-          curl -k -L --connect-timeout 4 --max-time 25 -sS -H 'content-type: application/json' \
-            --data '{"action":"controller.action","spec":{"action":"inspect","limit":350,"agent":"gpt56sol-ring","role":"measure","intent":"read the locally generated backend report in Notepad"}}' \
-            "$root" > "$out/ring-backend-inspect.json"
-
-          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' \
-            --data '{"action":"controller.read"}' "$root" > "$out/ring-state-after.json"
+          curl -k -L --connect-timeout 4 --max-time 25 -sS -H 'content-type: application/json' --data '{"action":"controller.action","spec":{"action":"inspect","limit":350,"agent":"gpt56sol-ring","role":"measure","intent":"read local backend report"}}' "$root" > "$out/ring-backend-inspect.json"
+          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data '{"action":"controller.read"}' "$root" > "$out/ring-state-after.json"
           true
       - uses: actions/upload-artifact@v4
         with:
