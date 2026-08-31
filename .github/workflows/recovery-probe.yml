@@ -5,22 +5,34 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 5
     steps:
-      - name: Probe live service ports directly
+      - name: Probe direct service ports and sidecar verbs
         shell: bash
         run: |
-          set -u
+          set +e
           out=/tmp/recovery-probe; mkdir -p "$out"
-          hosts='desktop-6fn9b4m.tail1bf489.ts.net desktop-6fn9b4m-1.tail1bf489.ts.net'
-          ports='8443 8787 8788 8789 8790 8791 8792 8798 8799 8811 8844 8901'
           i=0
-          for h in $hosts; do for p in $ports; do for scheme in https http; do
-            i=$((i+1)); n=$(printf '%03d' "$i")
-            u="$scheme://$h:$p/health"
-            curl -k -L --connect-timeout 3 --max-time 7 -sS -D "$out/$n.headers" "$u" -o "$out/$n.body"; rc=$?
-            printf '%s %s\n' "$u" "$rc" > "$out/$n.meta"
-          done; done; done
+          for h in desktop-6fn9b4m.tail1bf489.ts.net desktop-6fn9b4m-1.tail1bf489.ts.net; do
+            for p in 8443 8789 8791 8792 8798 8799 8811 8844; do
+              i=$((i+1)); n=$(printf 'port-%02d' "$i"); u="https://$h:$p/health"
+              curl -k --connect-timeout 2 --max-time 4 -sS -D "$out/$n.headers" "$u" -o "$out/$n.body"; printf '%s rc=%s\n' "$u" "$?" > "$out/$n.meta"
+            done
+          done
+          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
+          j=0
+          for a in sidecar.exec sidecar.shell shell.exec shell native_terminal exec powershell; do
+            j=$((j+1)); n=$(printf 'verb-%02d' "$j"); printf '{"action":"%s","spec":{"command":"printf RECOVERY_VERB_OK"}}' "$a" > "$out/$n.json"
+            curl -k --connect-timeout 3 --max-time 8 -sS -H 'content-type: application/json' --data-binary @"$out/$n.json" "$root" > "$out/$n.result.json"; echo "$a rc=$?" > "$out/$n.meta"
+          done
+          for shape in op action kind; do
+            n="field-$shape"; python - "$shape" <<'PY' > "$out/$n.json"
+          import json,sys
+          k=sys.argv[1]; spec={k:'shell','command':'printf RECOVERY_FIELD_OK'}
+          print(json.dumps({'action':'field.act','spec':spec},separators=(',',':')))
+          PY
+            curl -k --connect-timeout 3 --max-time 8 -sS -H 'content-type: application/json' --data-binary @"$out/$n.json" "$root" > "$out/$n.result.json"; echo "$shape rc=$?" > "$out/$n.meta"
+          done
           true
       - uses: actions/upload-artifact@v4
         with:
