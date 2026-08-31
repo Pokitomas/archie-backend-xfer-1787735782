@@ -5,22 +5,36 @@ on:
     paths:
       - '.github/workflows/archie-hotwire-probe.yml'
 
+permissions:
+  contents: read
+
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
-      - name: Read live controller through surviving phone bridge
+      - name: Capture live bridge state
         shell: bash
         run: |
-          set -u
+          set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/'
-          echo '=== WELL KNOWN ==='
-          curl -k -L --max-time 10 -sS "$root.well-known/archie-phone.json" || true
-          echo
-          echo '=== CONTROLLER READ ==='
-          curl -k -L --max-time 15 -sS \
+          mkdir -p /tmp/archie-hotwire
+          curl -k -L --max-time 15 -sS "$root.well-known/archie-phone.json" > /tmp/archie-hotwire/well-known.json
+          curl -k -L --max-time 20 -sS \
             -H 'content-type: application/json' \
             --data '{"action":"controller.read"}' \
-            "$root/v1/action" || true
-          echo
+            "$root/v1/action" > /tmp/archie-hotwire/controller-read.json
+          python - <<'PY'
+          import json, pathlib
+          for n in ('well-known.json','controller-read.json'):
+              p=pathlib.Path('/tmp/archie-hotwire')/n
+              json.load(open(p,encoding='utf-8'))
+              print(n, p.stat().st_size)
+          PY
+      - name: Upload private probe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: archie-hotwire-state
+          path: /tmp/archie-hotwire
+          retention-days: 1
+          if-no-files-found: error
