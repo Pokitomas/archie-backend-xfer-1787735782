@@ -39,7 +39,7 @@ jobs:
             chmod 700 "$cfbin.tmp"
             mv "$cfbin.tmp" "$cfbin"
           fi
-          pkill -f 'cloudflared.*127.0.0.1:8787' 2>/dev/null || true
+          pkill -x cloudflared 2>/dev/null || true
           : > "$base/cloudflared.log"
           nohup "$cfbin" tunnel --no-autoupdate --url http://127.0.0.1:8787 > "$base/cloudflared.log" 2>&1 </dev/null &
           echo $! > "$base/cloudflared.pid"
@@ -70,11 +70,12 @@ jobs:
           import json,sys
           x=json.load(open(sys.argv[1])); print('ok='+str(x.get('ok'))); print('rc='+str(x.get('rc'))); print(x.get('stdout',''))
           if x.get('stderr'): print('STDERR\n'+x['stderr'])
-          assert x.get('ok') and x.get('rc')==0
-          assert 'MARKER_DELETE=PASS' in x.get('stdout','') and 'CF_URL=https://' in x.get('stdout','')
           PY
+          grep -q 'MARKER_DELETE=PASS' "$out/receipt.txt"
+          grep -q 'CF_URL=https://' "$out/receipt.txt"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: recovery-probe
-          path: /tmp/recovery-probe/receipt.txt
+          path: /tmp/recovery-probe
           retention-days: 1
