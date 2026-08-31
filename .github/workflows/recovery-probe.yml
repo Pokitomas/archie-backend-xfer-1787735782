@@ -13,13 +13,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          host='desktop-6fn9b4m-1.tail1bf489.ts.net'
-          rescue="https://$host:8443"
+          ingress='https://minimum-sitting-uni-determine.trycloudflare.com'
           broker='https://archie-rescue-oidc-broker-20260831.vercel.app/api'
           oidc_json=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=archie-rescue-20260831")
           oidc=$(printf '%s' "$oidc_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
           broker_json=$(curl -fsS -H "Authorization: Bearer $oidc" "$broker")
           token=$(printf '%s' "$broker_json" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x.get("ok"); print(x["token"])')
+          curl -fsS --connect-timeout 8 --max-time 15 "$ingress/health" > "$out/health.json"
           cat > /tmp/pc-cmd <<'CMD'
           set +e
           echo '=== LIVE ENTRY ==='
@@ -73,13 +73,9 @@ jobs:
           import json,os
           print(json.dumps({'cmd':os.environ['PC_CMD'],'timeout':150}))
           PY
-          ok=0
-          for ip in 208.111.34.11 208.111.35.209; do
-            if curl -fkSs --resolve "$host:8443:$ip" --connect-timeout 8 --max-time 175 \
-              -H "Authorization: Bearer $token" -H 'content-type: application/json' \
-              --data-binary @/tmp/payload.json "$rescue/exec" > "$out/audit.json"; then ok=1; break; fi
-          done
-          [ "$ok" = 1 ]
+          curl -fsS --connect-timeout 8 --max-time 175 \
+            -H "Authorization: Bearer $token" -H 'content-type: application/json' \
+            --data-binary @/tmp/payload.json "$ingress/exec" > "$out/audit.json"
           python3 - "$out/audit.json" <<'PY' > "$out/audit.txt"
           import json,sys
           x=json.load(open(sys.argv[1])); print('ok='+str(x.get('ok'))); print('rc='+str(x.get('rc'))); print(x.get('stdout',''))
