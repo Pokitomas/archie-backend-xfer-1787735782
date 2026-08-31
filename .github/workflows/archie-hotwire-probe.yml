@@ -7,9 +7,9 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
-      - name: Inspect model ring compiler state
+      - name: Compile model ring with portable compiler
         shell: bash
         run: |
           set -euo pipefail
@@ -17,19 +17,44 @@ jobs:
           mkdir -p /tmp/archie-hotwire
           python - <<'PY' > /tmp/archie-hotwire/start.json
           import json
-          code = "import os,subprocess,pathlib,json; r=pathlib.Path(os.environ.get('LOCALAPPDATA',''))/'ModelRing'; print('ROOT',r); print('FILES',[(p.name,p.stat().st_size) for p in r.glob('*')]); print('STATUS', (r/'status.json').read_text(errors='replace') if (r/'status.json').exists() else 'none'); print('BUILD', (r/'build.log').read_text(errors='replace')[-12000:] if (r/'build.log').exists() else 'none'); print(subprocess.run(['tasklist.exe'],capture_output=True,text=True,errors='replace').stdout)"
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"measure","intent":"inspect fresh model-ring compiler and bootstrap state without touching legacy code"}},separators=(',',':')))
+          code = r'''import os,subprocess,pathlib,urllib.request,hashlib,zipfile,shutil,time,json
+r=pathlib.Path(os.environ.get('LOCALAPPDATA',''))/'ModelRing'; r.mkdir(parents=True,exist_ok=True)
+subprocess.run(['taskkill.exe','/PID','38424','/T','/F'],capture_output=True,text=True,errors='replace')
+subprocess.run(['taskkill.exe','/IM','winget.exe','/F'],capture_output=True,text=True,errors='replace')
+url='https://download.savannah.gnu.org/releases/tinycc/tcc-0.9.27-win64-bin.zip'; z=r/'tcc.zip'; want='34a721949a2583fdff725312da092fa0f5f1f284b702e6f811c6954714faabb2'
+if not z.exists() or hashlib.sha256(z.read_bytes()).hexdigest()!=want:
+    urllib.request.urlretrieve(url,z)
+if hashlib.sha256(z.read_bytes()).hexdigest()!=want: raise SystemExit('TCC checksum mismatch')
+d=r/'toolchain'; shutil.rmtree(d,ignore_errors=True); d.mkdir()
+with zipfile.ZipFile(z) as q:q.extractall(d)
+tcc=next(d.rglob('tcc.exe')); src=r/'model_ring.c'; exe=r/'model_ring.exe'
+p=subprocess.run([str(tcc),'-O2','-D_WIN32_WINNT=0x0602',str(src),'-o',str(exe)],capture_output=True,text=True,errors='replace',timeout=60)
+(r/'build.log').write_text((p.stdout or '')+(p.stderr or ''),encoding='utf-8',errors='replace')
+print('COMPILE',p.returncode); print((p.stdout or '')+(p.stderr or ''))
+if p.returncode: raise SystemExit(p.returncode)
+subprocess.run([str(exe),'shutdown'],capture_output=True,timeout=2)
+flags=getattr(subprocess,'DETACHED_PROCESS',0)|getattr(subprocess,'CREATE_NEW_PROCESS_GROUP',0)
+h=open(r/'host.log','ab',buffering=0); subprocess.Popen([str(exe),'host'],stdin=subprocess.DEVNULL,stdout=h,stderr=h,close_fds=True,creationflags=flags)
+time.sleep(.6)
+t=subprocess.run([str(exe),'selftest'],capture_output=True,text=True,errors='replace',timeout=20); c=subprocess.run([str(exe),'caps'],capture_output=True,text=True,errors='replace',timeout=3)
+task=subprocess.run(['schtasks.exe','/Create','/SC','ONLOGON','/TN','OpenAI Model Ring','/TR',f'\"{exe}\" host','/RL','LIMITED','/F'],capture_output=True,text=True,errors='replace',timeout=20)
+res={'ok':t.returncode==0 and c.returncode==0,'schema':'model-ring-bootstrap/v1','compiler':str(tcc),'selftest':t.stdout.strip()+t.stderr.strip(),'caps':c.stdout.strip()+c.stderr.strip(),'startup_task_rc':task.returncode,'startup_task':(task.stdout+task.stderr).strip(),'exe':str(exe),'exe_bytes':exe.stat().st_size if exe.exists() else 0}
+(r/'status.json').write_text(json.dumps(res,indent=2),encoding='utf-8'); print(json.dumps(res,separators=(',',':')))
+raise SystemExit(0 if res['ok'] else 9)'''
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"execute","intent":"compile and start the fresh model-native SPSC ring using a portable local compiler"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
-          sleep 3
+          sleep 7
           python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
           import json,sys
           v=json.load(open(sys.argv[1])); r=v.get('result') or {}; tid=((r.get('result') or r).get('terminal_id') if isinstance(r,dict) else None)
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read compiler inspection"}},separators=(',',':')))
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read model-ring compile and selftest result"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
+          sleep 5
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll2.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-compiler-inspect
+          name: model-ring-tcc-build
           path: /tmp/archie-hotwire
           retention-days: 1
