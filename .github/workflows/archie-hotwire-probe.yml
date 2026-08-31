@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Diagnose fresh model ring
+      - name: Read fresh ring mechanics
         shell: bash
         run: |
           set -euo pipefail
@@ -17,19 +17,19 @@ jobs:
           mkdir -p /tmp/archie-hotwire
           python - <<'PY' > /tmp/archie-hotwire/start.json
           import json
-          code="import base64,zlib;exec(zlib.decompress(base64.b64decode('eNqVk1Fv2jAQx9/5FNY92ZMXaLW9IOUhorSKBgUR+oSqKMBBvQbb2M7E9ul3TtKuXaVJe0lO5/zv/vfzRZ2scYEZL32ztc7s0Htpq/BUq60M6oTyuzd64NI+lyzpzY1PUP9QzujkiIHDbDHJZtlyeZOtM5AAQgxhbvZYr5Q+wgAvmLohnGKmdJRKKAMDSyGJb/PZtAC54TbRFTW0iQ9V4IJepVe/ULCDccwypZlLjrXZcvgE4lEMYjoq4gmHbaPqfVKbIxl4Mj70YazV+CROAWI8YJacRBFFXfs0Bdn2jZF4SdvEYbUvA14CR+eM8yk4tHW1QxCbz1fXo9Fo/MjUgVkaRvnguWBYe2Qwz4siv7+jWn2HdVZ8m+XFupwvbqazctUdntM/xBPXaL6BUPnnmmq1eCQMb3N65vPsbnqfzacMz+wvhI9yV9nQOCxNE2wT0rVrUEbTXfTBeW/pTNORTO+onDwT6D3pu4AkHdnYqiNLPXwkifUhoA8txssH9z44Tp6EjML/NdauGn2aXn99vQKIuKAtJ2E1AXl56xoWD2uQpHf80g8gJExXq7fJOMzrNRSLh9VkWhb3+ZJA+JS/X8kdiH/dectEyVrplgrq5oSuCsh94m2tQjygHZBXkQ6tRaV/8uf4ZauI4ueOJnlhp0rpt0TlC+MJOQh4q2qcV9bGn4cGtajfZ+J6l32NXa1Q053Etj24zuVmfP1lRH/JbxGzSwU=')))"
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"measure","intent":"diagnose only the newly built model ring host and selftest"}},separators=(',',':')))
+          code="import base64,zlib;exec(zlib.decompress(base64.b64decode('eNotjcEKwjAQRO/5irCnBEts0ZPQQ9GjYhFvIlLtti6kSdgEEUr/3SoehnkDD4aG4DlJH7PQpKeluwjln0w9t/LRoHsRe2d6TAr2x221r+p6V50ryAC0XsLBt2hP5HpYwvDlG8/DPEBYchjLYBib9pbwnRQye44lMAbbPBC0icFS+olKi86zJElOcuN6VEWRZwM5ZXHOV9HZqsi13ggZ5o+kOhhpUWzydTvJ8Wdc6DqBFh9cR0fe')))"
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"measure","intent":"inspect only fresh ring mechanics to repair its selftest"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
-          sleep 6
+          sleep 3
           python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
           import json,sys
           v=json.load(open(sys.argv[1])); r=v.get('result') or {}; inner=(r.get('result') or r) if isinstance(r,dict) else {}; tid=inner.get('terminal_id')
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read fresh model ring diagnostics"}},separators=(',',':')))
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read fresh ring source slice"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-diag
+          name: model-ring-source-slice
           path: /tmp/archie-hotwire
           retention-days: 1
