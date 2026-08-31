@@ -5,17 +5,22 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Map surviving tailscale serve routes
+      - name: Probe live service ports directly
         shell: bash
         run: |
           set -u
           out=/tmp/recovery-probe; mkdir -p "$out"
-          host='https://desktop-6fn9b4m.tail1bf489.ts.net'
-          paths=' /health /archie /archie/ /room /room/ /roast /roast/ /post /post/ /poke /poke/ /exec /exec/ /sidecar /sidecar/ /hotwire /hotwire/ /takeover /takeover/ /seat /seat/ /maker /maker/ /postchat /postchat/ /archie-phone /archie-phone/health'
+          hosts='desktop-6fn9b4m.tail1bf489.ts.net desktop-6fn9b4m-1.tail1bf489.ts.net'
+          ports='8443 8787 8788 8789 8790 8791 8792 8798 8799 8811 8844 8901'
           i=0
-          for p in $paths; do i=$((i+1)); n=$(printf '%02d' "$i"); curl -k -L --connect-timeout 4 --max-time 10 -sS -D "$out/$n.headers" "$host$p" -o "$out/$n.body"; echo "$p $?" > "$out/$n.meta"; done
+          for h in $hosts; do for p in $ports; do for scheme in https http; do
+            i=$((i+1)); n=$(printf '%03d' "$i")
+            u="$scheme://$h:$p/health"
+            curl -k -L --connect-timeout 3 --max-time 7 -sS -D "$out/$n.headers" "$u" -o "$out/$n.body"; rc=$?
+            printf '%s %s\n' "$u" "$rc" > "$out/$n.meta"
+          done; done; done
           true
       - uses: actions/upload-artifact@v4
         with:
