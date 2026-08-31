@@ -7,28 +7,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Probe resolve pocket contract
+      - name: Advance live recovery contract and direct desktop tap
         shell: bash
         run: |
           set -u
           out=/tmp/recovery-probe; mkdir -p "$out"
-          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          cat > "$out/read.json" <<'EOF'
-          {"action":"packet.read","spec":{}}
+          base='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone'
+          root="$base/v1/action"
+          cat > "$out/p0.json" <<'EOF'
+          {"action":"packet.write","spec":{"packet":{}}}
           EOF
-          cat > "$out/write-empty.json" <<'EOF'
-          {"action":"packet.write","spec":{}}
+          cat > "$out/p1.json" <<'EOF'
+          {"action":"packet.write","spec":{"packet":{"schema":"archie-resolve-pocket/v2"}}}
           EOF
-          cat > "$out/write-text.json" <<'EOF'
-          {"action":"packet.write","spec":{"text":"Recover the local ARCHIE controller and field worker, verify /health and /seat/head, preserve current operator state."}}
+          cat > "$out/p2.json" <<'EOF'
+          {"action":"packet.write","spec":{"packet":{"schema":"archie-resolve-pocket/v2","status":"requested","request":"Recover the local ARCHIE controller and field worker, verify /health and /seat/head, preserve current operator state."}}}
           EOF
-          cat > "$out/write-request.json" <<'EOF'
-          {"action":"packet.write","spec":{"request":"Recover the local ARCHIE controller and field worker, verify /health and /seat/head, preserve current operator state."}}
+          cat > "$out/p3.json" <<'EOF'
+          {"action":"packet.write","spec":{"packet":{"schema":"archie-resolve-pocket/v2","status":"requested","intent":"Recover the local ARCHIE controller and field worker, verify /health and /seat/head, preserve current operator state.","action":"repair"}}}
           EOF
-          cat > "$out/write-intent.json" <<'EOF'
-          {"action":"packet.write","spec":{"intent":"Recover the local ARCHIE controller and field worker, verify /health and /seat/head, preserve current operator state.","mode":"repair"}}
+          cat > "$out/tap.json" <<'EOF'
+          {"action":"desktop.tap","spec":{"x":803,"y":704}}
           EOF
           for f in "$out"/*.json; do n=$(basename "$f" .json); curl -k -L --connect-timeout 5 --max-time 15 -sS -H 'content-type: application/json' --data-binary @"$f" "$root" > "$out/$n.result.json"; echo $? > "$out/$n.rc"; done
+          sleep 2
+          curl -k -L --connect-timeout 5 --max-time 12 -sS "$base/shot" -o "$out/after.jpg" || true
           true
       - uses: actions/upload-artifact@v4
         with:
