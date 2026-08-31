@@ -2,33 +2,74 @@ name: recovery-probe
 on: [push]
 permissions:
   contents: read
+  id-token: write
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      - name: Resolve funnel edge for rescue
+      - name: Bridge OIDC into rescue and open low-latency tunnel
         shell: bash
         run: |
-          set +e
+          set -Eeuo pipefail
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          old='desktop-6fn9b4m.tail1bf489.ts.net'
-          new='desktop-6fn9b4m-1.tail1bf489.ts.net'
-          { getent ahostsv4 "$old"; dig +short A "$old"; } > "$out/old.dns" 2>&1
-          { getent ahostsv4 "$new"; dig +short A "$new"; } > "$out/new.dns" 2>&1
-          for host in "$old" "$new"; do
-            n=${host%%.*}
-            for port in 443 8443; do
-              curl -k -sS --connect-timeout 5 --max-time 12 -D "$out/$n-$port.headers" -o "$out/$n-$port.body" -w '%{http_code} %{remote_ip} %{time_total}\n' "https://$host:$port/health" > "$out/$n-$port.meta" 2> "$out/$n-$port.err"; echo $? > "$out/$n-$port.rc"
-            done
-          done
-          ip=$(getent ahostsv4 "$old" | awk 'NR==1{print $1}')
-          if [ -n "$ip" ]; then
-            curl -k -sS --resolve "$new:8443:$ip" --connect-timeout 5 --max-time 15 -D "$out/resolve.headers" -o "$out/resolve.body" -w '%{http_code} %{remote_ip} %{time_total}\n' "https://$new:8443/health" > "$out/resolve.meta" 2> "$out/resolve.err"; echo $? > "$out/resolve.rc"
+          rescue='https://desktop-6fn9b4m-1.tail1bf489.ts.net:8443'
+          broker='https://archie-rescue-oidc-broker-20260831.vercel.app/api'
+          oidc_json=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=archie-rescue-20260831")
+          oidc=$(printf '%s' "$oidc_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+          broker_json=$(curl -fsS -H "Authorization: Bearer $oidc" "$broker")
+          token=$(printf '%s' "$broker_json" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x.get("ok"); print(x["token"])')
+          cat > /tmp/pc-cmd <<'CMD'
+          set -Eeuo pipefail
+          echo "ENTRY_HOST=$(hostname)"
+          echo "ENTRY_TIME=$(date -Is)"
+          marker="$HOME/.archie-rescue-live-proof"
+          printf 'assistant-live %s\n' "$(date -Is)" > "$marker"
+          echo "MARKER_READ=$(cat "$marker")"
+          rm -f "$marker"
+          test ! -e "$marker" && echo 'MARKER_DELETE=PASS'
+          base="$HOME/.local/share/archie-rescue"
+          mkdir -p "$base"
+          cfbin="$(command -v cloudflared || true)"
+          if [ -z "$cfbin" ]; then
+            mkdir -p "$HOME/.local/bin"
+            cfbin="$HOME/.local/bin/cloudflared"
+            curl -fL --retry 2 --connect-timeout 8 --max-time 60 -o "$cfbin.tmp" 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64'
+            chmod 700 "$cfbin.tmp"
+            mv "$cfbin.tmp" "$cfbin"
           fi
-          true
+          pkill -f 'cloudflared.*127.0.0.1:8787' 2>/dev/null || true
+          : > "$base/cloudflared.log"
+          nohup "$cfbin" tunnel --no-autoupdate --url http://127.0.0.1:8787 > "$base/cloudflared.log" 2>&1 </dev/null &
+          echo $! > "$base/cloudflared.pid"
+          cf=''
+          for i in $(seq 1 30); do
+            cf=$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$base/cloudflared.log" | tail -1 || true)
+            [ -n "$cf" ] && break
+            sleep 1
+          done
+          [ -n "$cf" ] || { echo 'CLOUDFLARE_FAILED'; tail -n 80 "$base/cloudflared.log"; exit 21; }
+          echo "CF_URL=$cf"
+          echo "CF_PID=$(cat "$base/cloudflared.pid")"
+          curl -fsS http://127.0.0.1:8787/health
+          CMD
+          export PC_CMD="$(cat /tmp/pc-cmd)"
+          python3 - <<'PY' >/tmp/payload.json
+          import json,os
+          print(json.dumps({'cmd':os.environ['PC_CMD'],'timeout':120}))
+          PY
+          curl -fkSs --connect-timeout 8 --max-time 150 \
+            -H "Authorization: Bearer $token" -H 'content-type: application/json' \
+            --data-binary @/tmp/payload.json "$rescue/exec" > "$out/entry.json"
+          python3 - "$out/entry.json" <<'PY' > "$out/receipt.txt"
+          import json,sys
+          x=json.load(open(sys.argv[1])); print('ok='+str(x.get('ok'))); print('rc='+str(x.get('rc'))); print(x.get('stdout',''))
+          if x.get('stderr'): print('STDERR\n'+x['stderr'])
+          assert x.get('ok') and x.get('rc')==0
+          assert 'MARKER_DELETE=PASS' in x.get('stdout','') and 'CF_URL=https://' in x.get('stdout','')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: recovery-probe
-          path: /tmp/recovery-probe
+          path: /tmp/recovery-probe/receipt.txt
           retention-days: 1
