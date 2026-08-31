@@ -7,18 +7,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Probe new host rescue and ring
+      - name: Resolve funnel edge for rescue
         shell: bash
         run: |
           set +e
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          host='desktop-6fn9b4m-1.tail1bf489.ts.net'
-          curl -k -sS --connect-timeout 4 --max-time 12 -D "$out/rescue.headers" -o "$out/rescue.body" -w '%{http_code}\n' "https://$host:8443/health" > "$out/rescue.http"; echo $? > "$out/rescue.rc"
-          root="https://$host/archie-phone/v1/action"
-          for action in status.read phone.capabilities driver.read signal.read; do
-            n=${action//./-}; printf '{"action":"%s"}' "$action" > "$out/$n.request.json"
-            curl -k -L -sS --connect-timeout 4 --max-time 12 -D "$out/$n.headers" -o "$out/$n.body" -w '%{http_code}\n' -H 'content-type: application/json' --data-binary @"$out/$n.request.json" "$root" > "$out/$n.http"; echo $? > "$out/$n.rc"
+          old='desktop-6fn9b4m.tail1bf489.ts.net'
+          new='desktop-6fn9b4m-1.tail1bf489.ts.net'
+          { getent ahostsv4 "$old"; dig +short A "$old"; } > "$out/old.dns" 2>&1
+          { getent ahostsv4 "$new"; dig +short A "$new"; } > "$out/new.dns" 2>&1
+          for host in "$old" "$new"; do
+            n=${host%%.*}
+            for port in 443 8443; do
+              curl -k -sS --connect-timeout 5 --max-time 12 -D "$out/$n-$port.headers" -o "$out/$n-$port.body" -w '%{http_code} %{remote_ip} %{time_total}\n' "https://$host:$port/health" > "$out/$n-$port.meta" 2> "$out/$n-$port.err"; echo $? > "$out/$n-$port.rc"
+            done
           done
+          ip=$(getent ahostsv4 "$old" | awk 'NR==1{print $1}')
+          if [ -n "$ip" ]; then
+            curl -k -sS --resolve "$new:8443:$ip" --connect-timeout 5 --max-time 15 -D "$out/resolve.headers" -o "$out/resolve.body" -w '%{http_code} %{remote_ip} %{time_total}\n' "https://$new:8443/health" > "$out/resolve.meta" 2> "$out/resolve.err"; echo $? > "$out/resolve.rc"
+          fi
           true
       - uses: actions/upload-artifact@v4
         with:
