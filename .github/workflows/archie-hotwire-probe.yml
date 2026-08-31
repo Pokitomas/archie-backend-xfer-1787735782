@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Build fresh model-native SPSC ring
+      - name: Build fresh model-native SPSC ring v3
         shell: bash
         run: |
           set -euo pipefail
@@ -36,6 +36,6 @@ jobs:
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/status-start.json "$root" > /tmp/archie-hotwire/status-start-result.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-final-v2
+          name: model-ring-final-v3
           path: /tmp/archie-hotwire
           retention-days: 1
