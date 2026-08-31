@@ -7,20 +7,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Read backend through allowed ring surfaces
+      - name: Prove live PC actuation through ring
         shell: bash
         run: |
           set +e
-          out=/tmp/recovery-probe
-          rm -rf "$out"
-          mkdir -p "$out"
+          out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          for action in status.read signal.read driver.read field.read controller.read packet.read phone.capabilities; do
-            n=${action//./-}
-            printf '{"action":"%s"}' "$action" > "$out/$n.request.json"
-            curl -k -L --connect-timeout 4 --max-time 12 -sS -H 'content-type: application/json' --data-binary @"$out/$n.request.json" "$root" > "$out/$n.result.json"
-            printf '%s rc=%s bytes=%s\n' "$action" "$?" "$(wc -c < "$out/$n.result.json")" > "$out/$n.meta"
-          done
+          cat > "$out/focus.json" <<'EOF'
+          {"action":"desktop.focus_resolve","spec":{}}
+          EOF
+          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data-binary @"$out/focus.json" "$root" > "$out/focus.result.json"; echo $? > "$out/focus.rc"
+          cat > "$out/inspect.json" <<'EOF'
+          {"action":"controller.action","spec":{"action":"inspect","limit":60,"agent":"gpt56sol-ring","role":"measure","intent":"prove live PC actuation"}}
+          EOF
+          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data-binary @"$out/inspect.json" "$root" > "$out/inspect.result.json"; echo $? > "$out/inspect.rc"
+          cat > "$out/status.json" <<'EOF'
+          {"action":"status.read"}
+          EOF
+          curl -k -L --connect-timeout 4 --max-time 12 -sS -H 'content-type: application/json' --data-binary @"$out/status.json" "$root" > "$out/status.result.json"; echo $? > "$out/status.rc"
           true
       - uses: actions/upload-artifact@v4
         with:
