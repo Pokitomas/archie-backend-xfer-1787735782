@@ -7,14 +7,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
-      - name: Inspect live phone hand client contract
+      - name: Map live desktop key whitelist
         shell: bash
         run: |
           set -u
           out=/tmp/recovery-probe; mkdir -p "$out"
-          base='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone'
-          for p in hands.html hands.js hands.css index.html app.js; do n=${p//./_}; curl -k -L --connect-timeout 5 --max-time 12 -sS -D "$out/$n.headers" "$base/$p" -o "$out/$n.body"; echo $? > "$out/$n.rc"; done
-          grep -nEi 'desktop\.key|desktop\.tap|v1/action|key not allowed|key:' "$out/hands_js.body" > "$out/key-hints.txt" || true
+          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
+          for k in a r p enter escape tab space backspace left right up down home end win ctrl alt; do
+            printf '{"action":"desktop.key","spec":{"key":"%s"}}\n' "$k" > "$out/$k.json"
+            curl -k -L --connect-timeout 5 --max-time 12 -sS -H 'content-type: application/json' --data-binary @"$out/$k.json" "$root" > "$out/$k.result.json"; echo $? > "$out/$k.rc"
+          done
           true
       - uses: actions/upload-artifact@v4
         with:
