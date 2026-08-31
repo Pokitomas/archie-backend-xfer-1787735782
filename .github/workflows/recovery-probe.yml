@@ -5,34 +5,71 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 4
     steps:
-      - name: Probe direct service ports and sidecar verbs
+      - name: Enter ring and inspect backend locally
         shell: bash
         run: |
           set +e
-          out=/tmp/recovery-probe; mkdir -p "$out"
-          i=0
-          for h in desktop-6fn9b4m.tail1bf489.ts.net desktop-6fn9b4m-1.tail1bf489.ts.net; do
-            for p in 8443 8789 8791 8792 8798 8799 8811 8844; do
-              i=$((i+1)); n=$(printf 'port-%02d' "$i"); u="https://$h:$p/health"
-              curl -k --connect-timeout 2 --max-time 4 -sS -D "$out/$n.headers" "$u" -o "$out/$n.body"; printf '%s rc=%s\n' "$u" "$?" > "$out/$n.meta"
-            done
-          done
+          out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          j=0
-          for a in sidecar.exec sidecar.shell shell.exec shell native_terminal exec powershell; do
-            j=$((j+1)); n=$(printf 'verb-%02d' "$j"); printf '{"action":"%s","spec":{"command":"printf RECOVERY_VERB_OK"}}' "$a" > "$out/$n.json"
-            curl -k --connect-timeout 3 --max-time 8 -sS -H 'content-type: application/json' --data-binary @"$out/$n.json" "$root" > "$out/$n.result.json"; echo "$a rc=$?" > "$out/$n.meta"
-          done
-          for shape in op action kind; do
-            n="field-$shape"; python - "$shape" <<'PY' > "$out/$n.json"
-          import json,sys
-          k=sys.argv[1]; spec={k:'shell','command':'printf RECOVERY_FIELD_OK'}
-          print(json.dumps({'action':'field.act','spec':spec},separators=(',',':')))
+
+          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' \
+            --data '{"action":"controller.read"}' "$root" > "$out/ring-state-before.json"
+
+          python - <<'PY' > "$out/backend-command.json"
+          import json
+          script=r'''OUT='/mnt/c/Users/AwesomeKai/Documents/New project/tmp/gpt56_ring_backend.txt'
+mkdir -p "$(dirname "$OUT")"
+{
+  echo '=== GPT56 RING BACKEND INSPECTION ==='
+  date -Ins
+  echo
+  echo '=== HOST ==='
+  hostname; id; uname -a
+  echo
+  echo '=== RUNNING ARCHIE/RESOLVE SERVICES ==='
+  systemctl --user --no-pager --type=service --state=running 2>&1 | grep -Eia 'archie|resolve|sidecar|controller|postchat|train|crawl|resident|seat' || true
+  echo
+  echo '=== RELEVANT PROCESSES ==='
+  ps -eo pid,ppid,etimes,%cpu,%mem,cmd --sort=-%cpu 2>&1 | grep -Eia 'archie|resolve|train|crawl|resident|sidecar|controller|python|node' | grep -v grep | head -120 || true
+  echo
+  echo '=== LISTENERS ==='
+  ss -ltnp 2>&1 | grep -E ':(8789|8791|8798|8799|8811|8901)\\b' || true
+  echo
+  echo '=== GPU ==='
+  nvidia-smi 2>&1 || true
+  echo
+  echo '=== CONTROLLER/SEAT LOCAL HEALTH ==='
+  for u in http://127.0.0.1:8798/health http://127.0.0.1:8798/seat/head http://127.0.0.1:8799/health http://127.0.0.1:8789/health http://127.0.0.1:8791/health; do
+    echo "--- $u"; curl -fsS --max-time 3 "$u" 2>&1 || true; echo
+  done
+  echo
+  echo '=== RECENT ARCHIE FILES ==='
+  find /home/awesomekai -maxdepth 3 -type f \
+    \( -iname '*receipt*.json*' -o -iname '*state*.json' -o -iname '*lease*.json' -o -iname '*checkpoint*.pt' -o -iname '*halt*.json' \) \
+    -printf '%T@ %TY-%Tm-%TdT%TH:%TM:%TS %s %p\\n' 2>/dev/null | sort -nr | head -80 || true
+} > "$OUT" 2>&1
+'''
+          body={'action':'controller.action','spec':{'action':'native_terminal','op':'start','argv':[r'C:\\Windows\\System32\\wsl.exe','-e','bash','-lc',script],'agent':'gpt56sol-ring','role':'measure','intent':'read live backend from inside the resident ring without mutating it'}}
+          print(json.dumps(body,separators=(',',':')))
           PY
-            curl -k --connect-timeout 3 --max-time 8 -sS -H 'content-type: application/json' --data-binary @"$out/$n.json" "$root" > "$out/$n.result.json"; echo "$shape rc=$?" > "$out/$n.meta"
-          done
+          curl -k -L --connect-timeout 4 --max-time 25 -sS -H 'content-type: application/json' --data-binary @"$out/backend-command.json" "$root" > "$out/backend-command-result.json"
+          sleep 5
+
+          python - <<'PY' > "$out/open-report.json"
+          import json
+          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'start','argv':[r'C:\\Windows\\System32\\notepad.exe',r'C:\\Users\\AwesomeKai\\Documents\\New project\\tmp\\gpt56_ring_backend.txt'],'agent':'gpt56sol-ring','role':'measure','intent':'open backend inspection report for direct ring read'}},separators=(',',':')))
+          PY
+          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data-binary @"$out/open-report.json" "$root" > "$out/open-report-result.json"
+          sleep 3
+
+          curl -k -L --connect-timeout 4 --max-time 25 -sS -H 'content-type: application/json' \
+            --data '{"action":"controller.action","spec":{"action":"inspect","limit":350,"agent":"gpt56sol-ring","role":"measure","intent":"read the locally generated backend report in Notepad"}}' \
+            "$root" > "$out/ring-backend-inspect.json"
+
+          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' \
+            --data '{"action":"controller.read"}' "$root" > "$out/ring-state-after.json"
           true
       - uses: actions/upload-artifact@v4
         with:
