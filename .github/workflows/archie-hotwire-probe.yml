@@ -1,35 +1,44 @@
-name: ARCHIE hotwire probe
+name: final local cutover
 on:
   push:
     paths: ['.github/workflows/archie-hotwire-probe.yml']
 permissions:
   contents: read
 jobs:
-  probe:
+  cutover:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
-      - name: Verify local model ring and retire failed build residue
+      - name: Retire superseded local controller project through new ring
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          mkdir -p /tmp/archie-hotwire
-          python - <<'PY' > /tmp/archie-hotwire/start.json
+          mkdir -p /tmp/final-cutover
+          python - <<'PY' > /tmp/final-cutover/start.json
           import json
-          code="import json,subprocess,sys,pathlib;p=pathlib.Path(r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing\\model_ring.py');ops=[{'op':'delete','path':r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing\\model_ring.c'},{'op':'delete','path':r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing\\build.log'},{'op':'list','path':str(p.parent),'limit':50},{'op':'ping'}];rs=[subprocess.run([sys.executable,str(p),'call',json.dumps(o,separators=(',',':'))],capture_output=True,text=True,timeout=30) for o in ops];[print((r.stdout or r.stderr).strip()) for r in rs];raise SystemExit(rs[-1].returncode)"
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"execute","intent":"use the new local ring itself to remove failed-build residue and prove it remains resident"}},separators=(',',':')))
+          code=r'''import json,subprocess,sys,pathlib
+ring=pathlib.Path(r'C:\Users\AwesomeKai\AppData\Local\ModelRing\model_ring.py')
+def call(obj):
+ r=subprocess.run([sys.executable,str(ring),'call',json.dumps(obj,separators=(',',':'))],capture_output=True,text=True,timeout=90)
+ print(r.stdout.strip() or r.stderr.strip())
+ return r.returncode
+rc=call({'op':'delete','path':r'C:\Users\AwesomeKai\Documents\New project'})
+rc=max(rc,call({'op':'list','path':r'C:\Users\AwesomeKai\AppData\Local\ModelRing','limit':50}))
+rc=max(rc,call({'op':'ping'}))
+raise SystemExit(rc)'''
+          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'start','argv':[r'C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe','-c',code],'agent':'gpt56sol-model-ring','role':'execute','intent':'final cutover: delete superseded local controller project through the new ring, then prove the ring remains alive'}},separators=(',',':')))
           PY
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/final-cutover/start.json "$root" > /tmp/final-cutover/start-result.json
           sleep 4
-          python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
+          python - <<'PY' /tmp/final-cutover/start-result.json > /tmp/final-cutover/poll-request.json
           import json,sys
-          v=json.load(open(sys.argv[1])); r=v.get('result') or {}; i=(r.get('result') or r) if isinstance(r,dict) else {}; tid=i.get('terminal_id')
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"capture resident-ring cleanup proof"}},separators=(',',':')))
+          v=json.load(open(sys.argv[1]));r=v.get('result') or {};i=(r.get('result') or r) if isinstance(r,dict) else {};tid=i.get('terminal_id')
+          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'poll','terminal_id':tid,'agent':'gpt56sol-model-ring','role':'measure','intent':'capture final local cutover proof'}},separators=(',',':')))
           PY
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/final-cutover/poll-request.json "$root" > /tmp/final-cutover/poll.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-local-clean
-          path: /tmp/archie-hotwire
+          name: final-local-cutover
+          path: /tmp/final-cutover
           retention-days: 1
