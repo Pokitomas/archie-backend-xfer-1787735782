@@ -1,7 +1,5 @@
-name: final local cutover
-on:
-  push:
-    paths: ['.github/workflows/archie-hotwire-probe.yml']
+name: final-cutover
+on: [push]
 permissions:
   contents: read
 jobs:
@@ -9,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Retire superseded local controller project through new ring
+      - name: cutover
         shell: bash
         run: |
           set -euo pipefail
@@ -17,24 +15,15 @@ jobs:
           mkdir -p /tmp/final-cutover
           python - <<'PY' > /tmp/final-cutover/start.json
           import json
-          code=r'''import json,subprocess,sys,pathlib
-ring=pathlib.Path(r'C:\Users\AwesomeKai\AppData\Local\ModelRing\model_ring.py')
-def call(obj):
- r=subprocess.run([sys.executable,str(ring),'call',json.dumps(obj,separators=(',',':'))],capture_output=True,text=True,timeout=90)
- print(r.stdout.strip() or r.stderr.strip())
- return r.returncode
-rc=call({'op':'delete','path':r'C:\Users\AwesomeKai\Documents\New project'})
-rc=max(rc,call({'op':'list','path':r'C:\Users\AwesomeKai\AppData\Local\ModelRing','limit':50}))
-rc=max(rc,call({'op':'ping'}))
-raise SystemExit(rc)'''
-          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'start','argv':[r'C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe','-c',code],'agent':'gpt56sol-model-ring','role':'execute','intent':'final cutover: delete superseded local controller project through the new ring, then prove the ring remains alive'}},separators=(',',':')))
+          code="import json,subprocess,sys,pathlib; p=pathlib.Path(r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing\\model_ring.py'); qs=[{'op':'delete','path':r'C:\\Users\\AwesomeKai\\Documents\\New project'},{'op':'list','path':r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing','limit':50},{'op':'ping'}]; rc=0; [(lambda r: (print(r.stdout.strip() or r.stderr.strip()),globals().__setitem__('rc',max(rc,r.returncode))))(subprocess.run([sys.executable,str(p),'call',json.dumps(q,separators=(',',':'))],capture_output=True,text=True,timeout=90)) for q in qs]; raise SystemExit(rc)"
+          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'start','argv':[r'C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe','-c',code],'agent':'gpt56sol-model-ring','role':'execute','intent':'retire superseded local controller project using the model ring'}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/final-cutover/start.json "$root" > /tmp/final-cutover/start-result.json
           sleep 4
           python - <<'PY' /tmp/final-cutover/start-result.json > /tmp/final-cutover/poll-request.json
           import json,sys
-          v=json.load(open(sys.argv[1]));r=v.get('result') or {};i=(r.get('result') or r) if isinstance(r,dict) else {};tid=i.get('terminal_id')
-          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'poll','terminal_id':tid,'agent':'gpt56sol-model-ring','role':'measure','intent':'capture final local cutover proof'}},separators=(',',':')))
+          v=json.load(open(sys.argv[1])); r=v.get('result') or {}; i=(r.get('result') or r) if isinstance(r,dict) else {}; tid=i.get('terminal_id')
+          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'poll','terminal_id':tid,'agent':'gpt56sol-model-ring','role':'measure','intent':'capture final cutover proof'}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/final-cutover/poll-request.json "$root" > /tmp/final-cutover/poll.json || true
       - uses: actions/upload-artifact@v4
