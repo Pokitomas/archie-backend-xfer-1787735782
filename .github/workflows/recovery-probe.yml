@@ -13,7 +13,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          rescue='https://desktop-6fn9b4m-1.tail1bf489.ts.net:8443'
+          host='desktop-6fn9b4m-1.tail1bf489.ts.net'
+          rescue="https://$host:8443"
           broker='https://archie-rescue-oidc-broker-20260831.vercel.app/api'
           oidc_json=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=archie-rescue-20260831")
           oidc=$(printf '%s' "$oidc_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
@@ -58,9 +59,13 @@ jobs:
           import json,os
           print(json.dumps({'cmd':os.environ['PC_CMD'],'timeout':120}))
           PY
-          curl -fkSs --connect-timeout 8 --max-time 150 \
-            -H "Authorization: Bearer $token" -H 'content-type: application/json' \
-            --data-binary @/tmp/payload.json "$rescue/exec" > "$out/entry.json"
+          ok=0
+          for ip in 208.111.34.11 208.111.35.209; do
+            if curl -fkSs --resolve "$host:8443:$ip" --connect-timeout 8 --max-time 150 \
+              -H "Authorization: Bearer $token" -H 'content-type: application/json' \
+              --data-binary @/tmp/payload.json "$rescue/exec" > "$out/entry.json"; then ok=1; break; fi
+          done
+          [ "$ok" = 1 ]
           python3 - "$out/entry.json" <<'PY' > "$out/receipt.txt"
           import json,sys
           x=json.load(open(sys.argv[1])); print('ok='+str(x.get('ok'))); print('rc='+str(x.get('rc'))); print(x.get('stdout',''))
