@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Compile model ring with portable compiler
+      - name: Compile model ring from portable mirror
         shell: bash
         run: |
           set -euo pipefail
@@ -17,22 +17,22 @@ jobs:
           mkdir -p /tmp/archie-hotwire
           python - <<'PY' > /tmp/archie-hotwire/start.json
           import json
-          code = "import base64,zlib;exec(zlib.decompress(base64.b64decode('eNqdVt9z2jgQfvdf4dNL7akQxhAS6PiBAdoyQ4Ah9DpznY5H2DLWYSxHkhNCr//7rYxpQtLr3cUP+rFarVbffrsy3xVCalsorMp1IUXElMIF1WnG17iUGXREstuSKY1TqirxgRcJzxhWaal5hjXfMfynErklg3onWUDvCEVYfselyMmGaQdN58PBdLBYjAarAcIIuW4TXYuYZUueb5AlyW4bc+kUVLJcq2AlS4bZnisdim01c61HJ4ksc+cL0lRttzzLCNszsNlcTEbQta86fsdMV6Z5j77iiBa6lCwUpS5KfbSt2b4eMSmFVAGSrMhoxNB/OGhyDe09OM70SfSacwDiAKVaF6rfbMbiPs8EjYmidzTPaUo2eUmE3DQlyxhVTDU1zx+iqKmjqOGRHvEvG+BDt9NY85xAXJB1CGQTwfJxdk9zHaB2h176rV6nR/2Lq3YSJ8mlf9Fu+TH1en5CveQiaSX+VWd96fmsm1y1WlG3d9G5bHUSStdrH1k8sXOh7QOp4qEc1xbSrvlAVAp2u84BiELjcP2gGSi4JGX7mG+AOI77W2Ac6Vs2fOekIjCVTEvO7pgDY3xwzWGvMy0pV8y+eVCa7cZ7DpRbDYd2lLJoq8qdveNqR3WUAuxxhZIQWZRSniPrSGUid1oy5sSYb3IBUazjVXHvnR3XBHWte65Tu04D8gcv3kPvHFybKvu2b98CSlrSSNMsc2LXgmgEOYicmMhNJtZOFR9DGheIJiPjy87kQSiBTyRC72xYfCY16lYRPOel0tIBay5GjbkPJGyMws+TWds37WwVeHuv64HcqMFJRk0cZ2DP/b90rVIdVIOu51oO+LcueRaTTGyQS+4l1yw0mx2nIErHoGhYAnn+9igAc7UAszwSMVwrQKVOGlfoJ5lRwLUhgsP59WIyHSNcAAfAV7PRBOO4/K8nVWx6urX/kiVnlq2fIWzAwsiQxKToP6V5DY7vWklGNyqA0kC1Af6xsqLReDUYfhyPwsVyPhzf3CDsuX/9THG4HA9W43A2/nxSDT8s558WZoOVBqJguYlAKiCHTAAwomuE12WSMMOXwDu7yaLSf3IXsw/uAVjx/CmpRuPfZ5+mU3xENUjxEU0YRJlQLEziujBHkJGai/x41aoFpgMERGWMFQ7pwjT4BZgsSyCbNXo1CX24Imz9xRmwql5vvw0XgKL/wj5SUWoW1KnuDw0U1ehmCO18Np1/mM+q58e0c4B+MLGrl86unjqzskQ4eYO+gYnvyDbReAPS5RTWppPryWo8et2LcoaOZCr4hsQW9fUTigeBZ9M8tsHwuRSbm7EdRf1j4WkYIjXWQmiAlBbNuxb4FIldAdVOov5j6fkRy76j63x8q+s8dKGXvHBO4eg75txaqR6eqylNpS6L0GAcygich8ETT881zJlm/XRsPT43aQLVf+QFtMe3BPVhCGoUHhLoQsUPzIaCYaQ/XjqWQbnwvlcFz6iWipi/nfOSZyQkLneFcgB1zPMY/mGgFLyodKfC9myDYvDbQ7WJpQMoY4iBC8XrRa3yjHuw4YsJ69ejbz33b07bWUs=')))"
-          body = {"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"execute","intent":"compile and start the fresh model-native SPSC ring using a portable local compiler"}}
+          code = "import base64,zlib;exec(zlib.decompress(base64.b64decode('eNqdVt9v2zgMfvdf4dPLbEyxfd3Wu2XwQ5BmW4G0CdL0BtxQGLLNxFody5PkNc1u//uRtrM2bW/DLQ+yflAU+fEjGbmplbauMtw0aa1VBsbwWtiilClvdImfQMPnBozlhTDt9k7WK1kCN0VjZcmt3AD/ZFTl6Li/Gczx6ykTQPVFalUFa7Aem87Go+loPj8ZLUeMM+b7ITtTOZQLWa2Zo4PNdS61VwsNlTXxUjfAYSuNTdR1u/KdOyMD3VTeR2aFub6WZRnAFlBneHqG4w3qA7vfesuueCZq22hIVGPrxnaqLWz7GWittImZhroUGTDfSYWBmBXW1mYYhmtpiyYNMrUJ60JBJbe20I0pwqWsbgfjwVhtagREhxpKwJsmzNVNVSqRh1HwOjj6Y4AWHb8MmbOLdchslgWIIXvjmmK/NoU4enXMnBxWLoGF0Ldh8IeOiz8MQXwYjWDRfVvJAkQO6MFXdmlAD0ZrBJANEdwdQiPCV0HkbgjogUZkBqlS1lgtavbNb7XfoH/uA/W4VDVUHq7bCCNy8YvId4Vxjc642x6ShQh3ytr93NjOWvp15EDM6lsii0o/eXQPZXyHHCSEn5Prg/sQDVJZ7bFAfvkObGvILOSxKdA0kScUNe9RwAL0R9YefutSWs//GF0FpboB7f30NYoE3/mOyGwjyrgneW+Et+teTW8tGM/3gwK2uVwT7r5TI5pI6+V4nLwfXbxnvFPB9zb7jly53d5v8X5z6GohDbgXt8bCZrKVnQY3KyC7Ns3G3UizETYrkIV5yw6lyqwQsmr50oKqN1YDeDmX60ohq3s42hR54+Z9HvlOG9c+W4O/Zf0Wv96ujdXn4WfMDyRBZkVZemgrghNXBG4e6HWpUq/lJeWQj0oxdmRMy6KEWBRkaA+ePtgleaeOH+YphsdDdT5ng9kRJuXgJPlwev7iiMbzZRxto+MI90kMXyIx1a1Qn/9/0/c7X48j3/HQvrSRZY58WCNRbrS00LHIq5E2OQq6SrtYjp53G6iu3+BQZSpHt2LW2NXgT/ZEpehJMJ6dzU+nE8ZrJAzaShcpGN3xT19qqXL/6hM0OdDsPIUwgcUZkYTqz3+VvR6cI99ZlWJtYswPYQn4uwbATibL0fj95CSZL2bjycUF45H/z1OC48VktJwk55MPe9Hk3WJ2OacLThF3JSRkhcKSQgHgTKSMp81qBcSXODrwZN7K3/OF7qEfiJWs7pPqZPLX+eV0yjtU44J3aOIkK5WBZJX3/SPD9LVSVZ2r7YhURwgCUwLUXnCMy/gHYEK5wtS37JdJeIQu4tUfvIGn5tf1v0AHsAk+0s9MVtCB2ffBMUHRzi7GOM7Op7N3s3NaL2mcIfSjU7dtyG7bkelkwfjqGfuKKr4xl6LxDHcXUzybnp6dLicnv9ZhD9DRQJ1LXbOhvUfxOI5cUeUuKj7c5eQZbAQ2uKeaWvjld7Qp61syG96VHhyTvrcM+1J9F9+hZ/scfW773PzeVfoQDT2ypRfqp4dixgptmzoh3BOdoUM4uWf9oQS9Sef7Z/v5oUoK3vCOKzh2zYgNcYpiwlLXs4mRO3CxiNBu+6cJ25ULJZaQ6FtbBEm0MQH9UTssg7QT5M2mNtjsDZdVjv8esDw8qn77YvfgggH8xyYsxddD5DnGxceC9qh+RWQeXvhIob7qbHvt/wsZwZw9')))"
+          body={"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"execute","intent":"compile and start fresh model-native SPSC ring from a checksum-verified portable compiler mirror"}}
           print(json.dumps(body,separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
-          sleep 8
+          sleep 10
           python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
           import json,sys
           v=json.load(open(sys.argv[1])); r=v.get('result') or {}; inner=(r.get('result') or r) if isinstance(r,dict) else {}; tid=inner.get('terminal_id')
           print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read model-ring compile and selftest result"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
-          sleep 6
+          sleep 8
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll2.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-tcc-build
+          name: model-ring-github-tcc
           path: /tmp/archie-hotwire
           retention-days: 1
