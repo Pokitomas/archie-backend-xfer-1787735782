@@ -7,16 +7,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
-      - name: Map live desktop key whitelist
+      - name: Probe surviving bridge write and focus contracts
         shell: bash
         run: |
           set -u
           out=/tmp/recovery-probe; mkdir -p "$out"
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          for k in a r p enter escape tab space backspace left right up down home end win ctrl alt; do
-            printf '{"action":"desktop.key","spec":{"key":"%s"}}\n' "$k" > "$out/$k.json"
-            curl -k -L --connect-timeout 5 --max-time 12 -sS -H 'content-type: application/json' --data-binary @"$out/$k.json" "$root" > "$out/$k.result.json"; echo $? > "$out/$k.rc"
-          done
+          cat > "$out/stage-empty.json" <<'EOF'
+          {"action":"file.stage","spec":{}}
+          EOF
+          cat > "$out/stage-name-text.json" <<'EOF'
+          {"action":"file.stage","spec":{"name":"gpt56-recovery-probe.txt","text":"RECOVERY_STAGE_PROBE"}}
+          EOF
+          cat > "$out/stage-path-text.json" <<'EOF'
+          {"action":"file.stage","spec":{"path":"gpt56-recovery-probe.txt","text":"RECOVERY_STAGE_PROBE"}}
+          EOF
+          cat > "$out/stage-name-b64.json" <<'EOF'
+          {"action":"file.stage","spec":{"name":"gpt56-recovery-probe.txt","base64":"UkVDT1ZFUllfU1RBR0VfUFJPQkU="}}
+          EOF
+          cat > "$out/focus-powershell.json" <<'EOF'
+          {"action":"desktop.focus_resolve","spec":{"match":"PowerShell"}}
+          EOF
+          cat > "$out/focus-terminal.json" <<'EOF'
+          {"action":"desktop.focus_resolve","spec":{"match":"Terminal"}}
+          EOF
+          cat > "$out/field-empty.json" <<'EOF'
+          {"action":"field.act","spec":{}}
+          EOF
+          for f in "$out"/*.json; do n=$(basename "$f" .json); curl -k -L --connect-timeout 5 --max-time 18 -sS -H 'content-type: application/json' --data-binary @"$f" "$root" > "$out/$n.result.json"; echo $? > "$out/$n.rc"; done
           true
       - uses: actions/upload-artifact@v4
         with:
