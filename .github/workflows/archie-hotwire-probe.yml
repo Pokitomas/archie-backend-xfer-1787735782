@@ -7,23 +7,18 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 2
     steps:
-      - name: Burst into safe edit point
+      - name: Read current state
         shell: bash
         run: |
-          set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
-          cat > /tmp/archie-hotwire/burst.json <<'EOF'
-          {"action":"controller.action","spec":{"action":"burst","agent":"gpt56sol-hotwire","role":"execute","intent":"select GPT PASS 01 and navigate to fuchsia edit point","queue":[{"action":"poke","hwnd":32442934,"said":"ARCHIE // TIGHT 15 v3","kind":"Button","how":"invoke"},{"action":"click","x":1000,"y":323},{"action":"key","key":"home"},{"action":"hotkey","keys":["shift","down"]},{"action":"hotkey","keys":["shift","down"]},{"action":"hotkey","keys":["shift","down"]},{"action":"hotkey","keys":["shift","down"]},{"action":"hotkey","keys":["shift","down"]},{"action":"hotkey","keys":["shift","down"]}]}}
-          EOF
-          curl -k -L --max-time 30 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/burst.json "$root" > /tmp/archie-hotwire/burst-result.json
-          sleep 2
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see safe timeline at fuchsia edit point"}}' "$root" > /tmp/archie-hotwire/shot.json
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data '{"action":"controller.action","spec":{"action":"inspect","limit":200,"agent":"gpt56sol-hotwire","role":"measure","intent":"verify safe timeline and playhead"}}' "$root" > /tmp/archie-hotwire/inspect.json
+          curl -k -L --max-time 10 -sS -H 'content-type: application/json' --data '{"action":"controller.read"}' "$root" > /tmp/archie-hotwire/state.json || true
+          curl -k -L --max-time 10 -sS -H 'content-type: application/json' --data '{"action":"controller.action","spec":{"action":"inspect","limit":160,"agent":"gpt56sol-hotwire","role":"measure","intent":"read current Resolve timeline"}}' "$root" > /tmp/archie-hotwire/inspect.json || true
+          curl -k -L --max-time 10 -sS -H 'content-type: application/json' --data '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see current Resolve timeline"}}' "$root" > /tmp/archie-hotwire/shot.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: archie-fuchsia-safe
+          name: archie-post-burst-state
           path: /tmp/archie-hotwire
           retention-days: 1
