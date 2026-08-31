@@ -5,25 +5,26 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Probe live ChatGPT relay command contract
+      - name: Probe direct desktop key path through live ring
         shell: bash
         run: |
           set +e
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          url='https://archie-chatgpt-relay.vercel.app/api'
+          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           probe(){
             label="$1"; data="$2"
             printf '%s' "$data" > "$out/$label.request.json"
-            curl -sS -i --connect-timeout 8 --max-time 35 -X POST -H 'content-type: application/json' --data-binary @"$out/$label.request.json" "$url" > "$out/$label.response.txt"
+            curl -k -L -sS --connect-timeout 4 --max-time 12 -H 'content-type: application/json' --data-binary @"$out/$label.request.json" "$root" > "$out/$label.response.json"
             echo $? > "$out/$label.rc"
           }
-          probe cmd '{"cmd":"printf CHATGPT_RELAY_CMD_OK"}'
-          probe command '{"command":"printf CHATGPT_RELAY_COMMAND_OK"}'
-          probe b '{"b":"cHJpbnRmIENIQVRHUFRfUkVMQVlfQl9PSw"}'
-          probe goal '{"goal":"printf CHATGPT_RELAY_GOAL_OK"}'
-          probe health '{"action":"health"}'
+          probe caps '{"action":"phone.capabilities"}'
+          probe key1 '{"action":"desktop.key","spec":{"key":"esc"}}'
+          probe key2 '{"action":"desktop.key","spec":{"keys":["esc"]}}'
+          probe key3 '{"action":"desktop.key","key":"esc"}'
+          probe key4 '{"action":"desktop.key","spec":{"keys":"{ESC}"}}'
+          probe focus '{"action":"desktop.focus_resolve","spec":{}}'
           true
       - uses: actions/upload-artifact@v4
         with:
