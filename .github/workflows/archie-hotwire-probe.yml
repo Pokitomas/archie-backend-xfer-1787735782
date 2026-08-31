@@ -9,16 +9,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Poll model ring build
+      - name: Inspect model ring compiler state
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data '{"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":"c425248e44e95d27","agent":"gpt56sol-model-ring","role":"measure","intent":"read completed native model-ring compile and selftest"}}' "$root" > /tmp/archie-hotwire/poll.json || true
-          curl -k -L --max-time 15 -sS -H 'content-type: application/json' --data '{"action":"controller.action","spec":{"action":"inspect","limit":160,"agent":"gpt56sol-model-ring","role":"measure","intent":"verify model-ring resident process"}}' "$root" > /tmp/archie-hotwire/inspect.json || true
+          python - <<'PY' > /tmp/archie-hotwire/start.json
+          import json
+          code = "import os,subprocess,pathlib,json; r=pathlib.Path(os.environ.get('LOCALAPPDATA',''))/'ModelRing'; print('ROOT',r); print('FILES',[(p.name,p.stat().st_size) for p in r.glob('*')]); print('STATUS', (r/'status.json').read_text(errors='replace') if (r/'status.json').exists() else 'none'); print('BUILD', (r/'build.log').read_text(errors='replace')[-12000:] if (r/'build.log').exists() else 'none'); print(subprocess.run(['tasklist.exe'],capture_output=True,text=True,errors='replace').stdout)"
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"measure","intent":"inspect fresh model-ring compiler and bootstrap state without touching legacy code"}},separators=(',',':')))
+          PY
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
+          sleep 3
+          python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
+          import json,sys
+          v=json.load(open(sys.argv[1])); r=v.get('result') or {}; tid=((r.get('result') or r).get('terminal_id') if isinstance(r,dict) else None)
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read compiler inspection"}},separators=(',',':')))
+          PY
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-native-poll
+          name: model-ring-compiler-inspect
           path: /tmp/archie-hotwire
           retention-days: 1
