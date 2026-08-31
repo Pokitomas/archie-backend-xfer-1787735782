@@ -7,19 +7,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
-      - name: Probe Codex result only through live ring ingress
+      - name: Rediscover live ingress edges
         shell: bash
         run: |
           set +e
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          for action in status.read phone.capabilities controller.read field.read driver.read packet.read signal.read; do
-            printf '{"action":"%s"}\n' "$action" > "$out/$action.request.json"
-            curl -k -L --connect-timeout 4 --max-time 18 -sS -w '\n__HTTP__=%{http_code} __TIME__=%{time_total}\n' \
-              -H 'content-type: application/json' --data-binary @"$out/$action.request.json" "$root" > "$out/$action.result.txt" 2>"$out/$action.err"
-            echo $? > "$out/$action.rc"
+          for host in desktop-6fn9b4m.tail1bf489.ts.net desktop-6fn9b4m-1.tail1bf489.ts.net; do
+            curl -fsS --max-time 10 "https://dns.google/resolve?name=$host&type=A" > "$out/$host.dns.json" || true
+            python3 - "$out/$host.dns.json" <<'PY' > "$out/$host.ips"
+          import json,sys
+          try: x=json.load(open(sys.argv[1]))
+          except: x={}
+          for a in x.get('Answer',[]) or []:
+              d=str(a.get('data',''))
+              if a.get('type')==1 and d.count('.')==3: print(d)
+          PY
+            for ip in $(cat "$out/$host.ips"); do
+              echo "HOST=$host IP=$ip" >> "$out/probes.txt"
+              curl -kSs --resolve "$host:8443:$ip" --connect-timeout 4 --max-time 8 -w '\n8443_HTTP=%{http_code} T=%{time_total}\n' "https://$host:8443/health" >> "$out/probes.txt" 2>&1
+              printf '{"action":"status.read"}\n' > /tmp/ring.json
+              curl -kSs --resolve "$host:443:$ip" --connect-timeout 4 --max-time 12 -H 'content-type: application/json' --data-binary @/tmp/ring.json -w '\n443_HTTP=%{http_code} T=%{time_total}\n' "https://$host/archie-phone/v1/action" >> "$out/probes.txt" 2>&1
+            done
           done
-          true
+          cat "$out/probes.txt" || true
       - uses: actions/upload-artifact@v4
         with:
           name: recovery-probe
