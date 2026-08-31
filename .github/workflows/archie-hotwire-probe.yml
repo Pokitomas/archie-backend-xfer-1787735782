@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Read fresh ring mechanics
+      - name: Read fresh ring wait primitive
         shell: bash
         run: |
           set -euo pipefail
@@ -17,19 +17,19 @@ jobs:
           mkdir -p /tmp/archie-hotwire
           python - <<'PY' > /tmp/archie-hotwire/start.json
           import json
-          code="import base64,zlib;exec(zlib.decompress(base64.b64decode('eNotjcEKwjAQRO/5irCnBEts0ZPQQ9GjYhFvIlLtti6kSdgEEUr/3SoehnkDD4aG4DlJH7PQpKeluwjln0w9t/LRoHsRe2d6TAr2x221r+p6V50ryAC0XsLBt2hP5HpYwvDlG8/DPEBYchjLYBib9pbwnRQye44lMAbbPBC0icFS+olKi86zJElOcuN6VEWRZwM5ZXHOV9HZqsi13ggZ5o+kOhhpUWzydTvJ8Wdc6DqBFh9cR0fe')))"
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"measure","intent":"inspect only fresh ring mechanics to repair its selftest"}},separators=(',',':')))
+          code="import base64,zlib;exec(zlib.decompress(base64.b64decode('eNotjU0LwjAQRO/5FWFPCZb4gV4KPRQ9KhbxJlJqu9aFNAmbIIL4363FwzBv4MHQEDwn6WMWmvSwdBOh+JOpxlY+GnRPYu9Mj0nB/rgt92VV7cpzCRmA1nM4+A7tiVwPcxh+XPM4TAvCksNYBMPYdHXCV1LI7DkWwBhs0yJoE4OlNIlKi7tnSZKc5Mb1qBbZQE5ZHPMTdLZcbbTOhQzjQ1J3eNNsmS/W3Ue+J+NC1w9o8QXaKkeA')))"
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"measure","intent":"inspect only fresh ring wait primitive before replacing it with interprocess signaling"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
           sleep 3
           python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
           import json,sys
           v=json.load(open(sys.argv[1])); r=v.get('result') or {}; inner=(r.get('result') or r) if isinstance(r,dict) else {}; tid=inner.get('terminal_id')
-          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read fresh ring source slice"}},separators=(',',':')))
+          print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"read fresh ring source start"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
       - uses: actions/upload-artifact@v4
         with:
-          name: model-ring-source-slice
+          name: model-ring-source-start
           path: /tmp/archie-hotwire
           retention-days: 1
