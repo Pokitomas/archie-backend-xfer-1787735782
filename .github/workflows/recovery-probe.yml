@@ -7,30 +7,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Enter surviving desktop and resolve packet path
+      - name: Follow recovery packet and enter terminal directly
         shell: bash
         run: |
           set -u
           out=/tmp/recovery-probe; mkdir -p "$out"
           base='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone'
           root="$base/v1/action"
-          cat > "$out/p0.json" <<'EOF'
-          {"action":"packet.write","packet":{}}
+          sleep 2
+          cat > "$out/read.json" <<'EOF'
+          {"action":"packet.read"}
           EOF
-          cat > "$out/p1.json" <<'EOF'
-          {"action":"packet.write","packet":{"schema":"archie-resolve-pocket/v2"}}
+          cat > "$out/status.json" <<'EOF'
+          {"action":"status.read"}
           EOF
-          cat > "$out/p2.json" <<'EOF'
-          {"action":"packet.write","packet":{"schema":"archie-resolve-pocket/v2","status":"requested","request":"Recover the local ARCHIE controller and field worker, verify /health and /seat/head, preserve current operator state."}}
+          cat > "$out/field.json" <<'EOF'
+          {"action":"field.read"}
           EOF
-          cat > "$out/p3.json" <<'EOF'
-          {"action":"packet.write","packet":{"schema":"archie-resolve-pocket/v2","status":"requested","intent":"Recover the local ARCHIE controller and field worker, verify /health and /seat/head, preserve current operator state.","action":"repair"}}
-          EOF
-          for f in "$out"/p*.json; do n=$(basename "$f" .json); curl -k -L --connect-timeout 5 --max-time 15 -sS -H 'content-type: application/json' --data-binary @"$f" "$root" > "$out/$n.result.json"; echo $? > "$out/$n.rc"; done
           cat > "$out/tap.json" <<'EOF'
-          {"action":"desktop.tap","spec":{"x":0.62734,"y":0.97778}}
+          {"action":"desktop.tap","x":0.62734,"y":0.97778}
           EOF
-          curl -k -L --connect-timeout 5 --max-time 15 -sS -H 'content-type: application/json' --data-binary @"$out/tap.json" "$root" > "$out/tap.result.json"; echo $? > "$out/tap.rc"
+          for n in read status field tap; do curl -k -L --connect-timeout 5 --max-time 18 -sS -H 'content-type: application/json' --data-binary @"$out/$n.json" "$root" > "$out/$n.result.json"; echo $? > "$out/$n.rc"; done
           sleep 2
           curl -k -L --connect-timeout 5 --max-time 12 -sS "$base/shot" -o "$out/after.jpg" || true
           true
