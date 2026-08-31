@@ -13,20 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Open timeline selector
+      - name: Invoke timeline selector
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
           call(){ n="$1"; b="$2"; curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data "$b" "$root" > "/tmp/archie-hotwire/$n.json" || true; }
-          call selector '{"action":"controller.action","spec":{"action":"tap","x":1040,"y":67,"agent":"gpt56sol-hotwire","role":"execute","intent":"open Resolve timeline selector"}}'
+          call selector '{"action":"controller.action","spec":{"action":"poke","hwnd":32442934,"said":"ARCHIE // TIGHT 15 v3","kind":"Button","how":"invoke","agent":"gpt56sol-hotwire","role":"execute","intent":"open timeline selector semantically"}}'
           sleep 1
-          call shot '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see timeline selector options"}}'
-          call inspect '{"action":"controller.action","spec":{"action":"inspect","limit":240,"agent":"gpt56sol-hotwire","role":"measure","intent":"locate GPT PASS timeline option"}}'
+          call shot '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see open timeline list"}}'
+          call windows '{"action":"controller.action","spec":{"action":"windows","limit":80,"agent":"gpt56sol-hotwire","role":"measure","intent":"find timeline popup if separate"}}'
       - name: Upload selector
         uses: actions/upload-artifact@v4
         with:
-          name: archie-timeline-selector
+          name: archie-timeline-popup
           path: /tmp/archie-hotwire
           retention-days: 1
