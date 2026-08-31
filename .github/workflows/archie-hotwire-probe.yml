@@ -13,22 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Enter Edit and capture Workspace menu
+      - name: Open timeline selector
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
           call(){ n="$1"; b="$2"; curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data "$b" "$root" > "/tmp/archie-hotwire/$n.json" || true; }
-          call edit '{"action":"controller.action","spec":{"action":"poke","hwnd":32442934,"said":"Edit","kind":"CheckBox","how":"invoke","agent":"gpt56sol-hotwire","role":"execute","intent":"switch Resolve to Edit page"}}'
+          call selector '{"action":"controller.action","spec":{"action":"tap","x":1040,"y":67,"agent":"gpt56sol-hotwire","role":"execute","intent":"open Resolve timeline selector"}}'
           sleep 1
-          call editshot '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see current Resolve Edit page"}}'
-          call workspace '{"action":"controller.action","spec":{"action":"poke","hwnd":32442934,"said":"Workspace","kind":"MenuItem","how":"invoke","agent":"gpt56sol-hotwire","role":"execute","intent":"open Workspace menu"}}'
-          sleep 1
-          call menushot '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see Workspace menu and Console position"}}'
-      - name: Upload visual state
+          call shot '{"action":"controller.action","spec":{"action":"sense","sense":"region","image":true,"agent":"gpt56sol-hotwire","role":"measure","intent":"see timeline selector options"}}'
+          call inspect '{"action":"controller.action","spec":{"action":"inspect","limit":240,"agent":"gpt56sol-hotwire","role":"measure","intent":"locate GPT PASS timeline option"}}'
+      - name: Upload selector
         uses: actions/upload-artifact@v4
         with:
-          name: archie-resolve-visual-menu
+          name: archie-timeline-selector
           path: /tmp/archie-hotwire
           retention-days: 1
