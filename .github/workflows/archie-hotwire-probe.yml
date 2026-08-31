@@ -17,21 +17,14 @@ jobs:
           mkdir -p /tmp/archie-hotwire
           python - <<'PY' > /tmp/archie-hotwire/start.json
           import json
-          code=r'''import json,subprocess,sys,pathlib
-p=pathlib.Path(r'C:\Users\AwesomeKai\AppData\Local\ModelRing\model_ring.py')
-def c(o):
- r=subprocess.run([sys.executable,str(p),'call',json.dumps(o,separators=(',',':'))],capture_output=True,text=True,timeout=30);print(r.stdout.strip() or r.stderr.strip());return r.returncode
-for q in [r'C:\Users\AwesomeKai\AppData\Local\ModelRing\model_ring.c',r'C:\Users\AwesomeKai\AppData\Local\ModelRing\build.log']:
- c({'op':'delete','path':q})
-c({'op':'list','path':str(p.parent),'limit':50})
-raise SystemExit(c({'op':'ping'}))'''
+          code="import json,subprocess,sys,pathlib;p=pathlib.Path(r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing\\model_ring.py');ops=[{'op':'delete','path':r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing\\model_ring.c'},{'op':'delete','path':r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing\\build.log'},{'op':'list','path':str(p.parent),'limit':50},{'op':'ping'}];rs=[subprocess.run([sys.executable,str(p),'call',json.dumps(o,separators=(',',':'))],capture_output=True,text=True,timeout=30) for o in ops];[print((r.stdout or r.stderr).strip()) for r in rs];raise SystemExit(rs[-1].returncode)"
           print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe","-c",code],"agent":"gpt56sol-model-ring","role":"execute","intent":"use the new local ring itself to remove failed-build residue and prove it remains resident"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/start.json "$root" > /tmp/archie-hotwire/start-result.json
-          sleep 3
+          sleep 4
           python - <<'PY' /tmp/archie-hotwire/start-result.json > /tmp/archie-hotwire/poll-request.json
           import json,sys
-          v=json.load(open(sys.argv[1]));r=v.get('result') or {};i=(r.get('result') or r) if isinstance(r,dict) else {};tid=i.get('terminal_id')
+          v=json.load(open(sys.argv[1])); r=v.get('result') or {}; i=(r.get('result') or r) if isinstance(r,dict) else {}; tid=i.get('terminal_id')
           print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"poll","terminal_id":tid,"agent":"gpt56sol-model-ring","role":"measure","intent":"capture resident-ring cleanup proof"}},separators=(',',':')))
           PY
           curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/poll-request.json "$root" > /tmp/archie-hotwire/poll.json || true
