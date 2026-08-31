@@ -11,22 +11,26 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Probe action envelope
+      - name: Resume edit through live resident seat
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
-          post(){ name="$1"; body="$2"; curl -k -L --max-time 25 -sS -D "/tmp/archie-hotwire/${name}.headers" -H 'content-type: application/json' --data "$body" "$root" > "/tmp/archie-hotwire/${name}.json" || true; }
-          post capabilities '{"action":"controller.capabilities"}'
-          post inspect '{"action":"controller.action","spec":{"action":"inspect","limit":8,"agent":"operator-phone","role":"measure","intent":"hotwire read-only surface probe"}}'
-          for f in /tmp/archie-hotwire/*.json; do echo "$(basename "$f") $(wc -c < "$f")"; done
-      - name: Upload private action probe
+          python - <<'PY' > /tmp/archie-hotwire/input.json
+          import json
+          text = '''Continue the DaVinci edit now, using the live local tools rather than narrating. Work ONLY on the safe duplicate timeline ARCHIE // GPT PASS 01; preserve ARCHIE // TIGHT 15 untouched and save frequently. User wants the whole pass, fast and taste-forward. First fix the known fuchsia ~6:14 twitchy cluster: remove/smooth the 7–16-frame angle flashes while preserving dialogue rhythm, then preview it. Then continue the marker pass: blue = weird cut needs smoother/funnier, green = funny potential cut weird, red = unfunny/replace, fuchsia = bad. Clean the tiny Lonnie mumble at the end of the intentionally out-of-sync jerk-chicken stare so the stare ends in room/background only. Rebuild the electric-shock section from originals for better comedy. Use the source race conversation (~9:24–12:35 source dialogue) as a structural thread into shock setup (~12:41) and callbacks so it ties the podcast together. Opening: keep first minute/black-white treatment, improve Lonnie IV explanation with tasteful reverb + subtle equations drawn around the head, improve the cut on 'three', add subtle OfflineTV-ish percussive hit + tiny zoom-out-feel when Chad stands for the call into podcast. Smooth all name-marker motion and move Roni dot off face toward jaw/chain. Reuse existing C:\Users\AwesomeKai\Documents\New project\archie_resolve_bridge.py, tmp\resolve-live previews/transcript, and existing source sync instead of rebuilding plumbing. Make actual reversible edits and render-check them. Do not modify the original timeline.'''
+          print(json.dumps({'action':'controller.text','text':text,'interrupt':True,'delivery':'interrupt','client_message_id':'phone-edit-resume-20260830-1918'}))
+          PY
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @/tmp/archie-hotwire/input.json "$root" > /tmp/archie-hotwire/accepted.json
+          sleep 6
+          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data '{"action":"controller.read"}' "$root" > /tmp/archie-hotwire/read-after.json
+      - name: Upload private edit receipt
         uses: actions/upload-artifact@v4
         with:
-          name: archie-hotwire-actions
+          name: archie-edit-resume
           path: /tmp/archie-hotwire
           retention-days: 1
           if-no-files-found: error
