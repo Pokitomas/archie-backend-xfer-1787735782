@@ -2,87 +2,25 @@ name: recovery-probe
 on: [push]
 permissions:
   contents: read
-  id-token: write
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 4
     steps:
-      - name: Audit Codex ring state through live ingress
+      - name: Probe Codex result only through live ring ingress
         shell: bash
         run: |
-          set -Eeuo pipefail
-          out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          ingress='https://minimum-sitting-uni-determine.trycloudflare.com'
-          broker='https://archie-rescue-oidc-broker-20260831.vercel.app/api'
-          oidc_json=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=archie-rescue-20260831")
-          oidc=$(printf '%s' "$oidc_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
-          broker_json=$(curl -fsS -H "Authorization: Bearer $oidc" "$broker")
-          token=$(printf '%s' "$broker_json" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x.get("ok"); print(x["token"])')
-          curl -fsS --connect-timeout 8 --max-time 15 "$ingress/health" > "$out/health.json"
-          cat > /tmp/pc-cmd <<'CMD'
           set +e
-          echo '=== LIVE ENTRY ==='
-          date -Is; hostname; id; uptime
-          echo '=== RUNNING RING/ARCHIE/CODEX SERVICES ==='
-          systemctl --user list-units --type=service --state=running --no-pager 2>&1 | grep -Ei 'archie|ring|spsc|codex|ghost|seat|sidecar|controller|remote|toolbus|exec' | head -140
-          echo '=== ALL MATCHING UNIT FILES ==='
-          systemctl --user list-unit-files --type=service --no-pager 2>&1 | grep -Ei 'archie|ring|spsc|codex|ghost|seat|sidecar|controller|remote|toolbus|exec' | head -180
-          echo '=== LISTENERS ==='
-          ss -ltnp 2>&1 | grep -E '127\.0\.0\.1|172\.' | head -220
-          echo '=== MATCHING PROCESSES ==='
-          ps -eo pid,ppid,lstart,etimes,%cpu,%mem,cmd --sort=-%cpu 2>&1 | grep -Ei '[a]rchie|[r]ing|[s]psc|[c]odex|[g]host|[s]eat|[s]idecar|[c]ontroller|[t]oolbus|[r]emote|[l]ive_exec' | head -180
-          echo '=== RECENT USER UNIT FILES (3H) ==='
-          find "$HOME/.config/systemd/user" -maxdepth 2 -type f -mmin -180 -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort -r | head -180
-          echo '=== RECENT HOME RING/CODEX FILES (3H) ==='
-          find "$HOME" -maxdepth 5 -type f -mmin -180 \( -iname '*ring*' -o -iname '*spsc*' -o -iname '*archie*' -o -iname '*codex*' -o -iname '*ghost*' -o -iname '*seat*' -o -iname '*sidecar*' -o -iname '*controller*' -o -iname '*remote*' -o -iname '*toolbus*' -o -iname '*runtime*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort -r | head -260
-          echo '=== RECENT WINDOWS PROJECT/TEMP MATCHES (3H) ==='
-          for root in '/mnt/c/Users/AwesomeKai/Documents/New project' '/mnt/c/Users/AwesomeKai/AppData/Local/Temp'; do
-            echo "--- $root"
-            find "$root" -maxdepth 5 -type f -mmin -180 \( -iname '*ring*' -o -iname '*spsc*' -o -iname '*archie*' -o -iname '*codex*' -o -iname '*ghost*' -o -iname '*seat*' -o -iname '*sidecar*' -o -iname '*controller*' -o -iname '*remote*' -o -iname '*runtime*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort -r | head -180
+          out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
+          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
+          for action in status.read phone.capabilities controller.read field.read driver.read packet.read signal.read; do
+            printf '{"action":"%s"}\n' "$action" > "$out/$action.request.json"
+            curl -k -L --connect-timeout 4 --max-time 18 -sS -w '\n__HTTP__=%{http_code} __TIME__=%{time_total}\n' \
+              -H 'content-type: application/json' --data-binary @"$out/$action.request.json" "$root" > "$out/$action.result.txt" 2>"$out/$action.err"
+            echo $? > "$out/$action.rc"
           done
-          echo '=== CANDIDATE RING DIRECTORIES ==='
-          find "$HOME" '/mnt/c/Users/AwesomeKai/Documents/New project' -maxdepth 4 -type d \( -iname '*ring*' -o -iname '*spsc*' -o -iname '*codex*' -o -iname '*ghost*' \) -print 2>/dev/null | head -180
-          echo '=== REPO HEADS FROM MACHINE ==='
-          for d in "$HOME/archie-remote" "$HOME/archie" '/mnt/c/Users/AwesomeKai/Documents/New project'; do
-            [ -d "$d/.git" ] || continue
-            echo "--- REPO $d"
-            git -C "$d" status --short 2>&1 | head -100
-            git -C "$d" log -12 --date=iso --pretty='format:%h %ad %an %s' 2>&1 | head -20
-          done
-          echo '=== KNOWN LOCAL HTTP SURFACES ==='
-          for p in 8787 8789 8791 8792 8796 8798 8799 8800 8811 8901; do
-            printf 'PORT %s ' "$p"
-            curl -sS --connect-timeout .25 --max-time .8 -o /tmp/pbody -w 'HTTP=%{http_code} T=%{time_total}' "http://127.0.0.1:$p/health" 2>/dev/null
-            rc=$?; printf ' rc=%s body=' "$rc"; head -c 420 /tmp/pbody 2>/dev/null; echo
-          done
-          echo '=== RUNTIME TRUTH SUMMARY ==='
-          python3 - <<'PY'
-          import json,pathlib
-          for p in [pathlib.Path.home()/'archie-remote/runtime_truth.json', pathlib.Path('/mnt/c/Users/AwesomeKai/AppData/Local/Temp/ARCHIE_FIELD_STATE.json')]:
-              print('---',p)
-              try:
-                  x=json.loads(p.read_text(errors='replace'))
-                  keep={k:x.get(k) for k in ('schema','at','seq','basis','front','field','health','services','controller','worker','last_mutation') if k in x}
-                  print(json.dumps(keep,indent=2,ensure_ascii=False)[:12000])
-              except Exception as e: print(type(e).__name__,e)
-          PY
-          CMD
-          export PC_CMD="$(cat /tmp/pc-cmd)"
-          python3 - <<'PY' >/tmp/payload.json
-          import json,os
-          print(json.dumps({'cmd':os.environ['PC_CMD'],'timeout':150}))
-          PY
-          curl -fsS --connect-timeout 8 --max-time 175 \
-            -H "Authorization: Bearer $token" -H 'content-type: application/json' \
-            --data-binary @/tmp/payload.json "$ingress/exec" > "$out/audit.json"
-          python3 - "$out/audit.json" <<'PY' > "$out/audit.txt"
-          import json,sys
-          x=json.load(open(sys.argv[1])); print('ok='+str(x.get('ok'))); print('rc='+str(x.get('rc'))); print(x.get('stdout',''))
-          if x.get('stderr'): print('STDERR\n'+x['stderr'])
-          PY
+          true
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: recovery-probe
           path: /tmp/recovery-probe
