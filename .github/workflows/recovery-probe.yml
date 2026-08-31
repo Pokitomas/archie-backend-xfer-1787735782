@@ -7,24 +7,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Prove live PC actuation through ring
+      - name: Probe live ChatGPT relay command contract
         shell: bash
         run: |
           set +e
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          cat > "$out/focus.json" <<'EOF'
-          {"action":"desktop.focus_resolve","spec":{}}
-          EOF
-          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data-binary @"$out/focus.json" "$root" > "$out/focus.result.json"; echo $? > "$out/focus.rc"
-          cat > "$out/inspect.json" <<'EOF'
-          {"action":"controller.action","spec":{"action":"inspect","limit":60,"agent":"gpt56sol-ring","role":"measure","intent":"prove live PC actuation"}}
-          EOF
-          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data-binary @"$out/inspect.json" "$root" > "$out/inspect.result.json"; echo $? > "$out/inspect.rc"
-          cat > "$out/status.json" <<'EOF'
-          {"action":"status.read"}
-          EOF
-          curl -k -L --connect-timeout 4 --max-time 12 -sS -H 'content-type: application/json' --data-binary @"$out/status.json" "$root" > "$out/status.result.json"; echo $? > "$out/status.rc"
+          url='https://archie-chatgpt-relay.vercel.app/api'
+          probe(){
+            label="$1"; data="$2"
+            printf '%s' "$data" > "$out/$label.request.json"
+            curl -sS -i --connect-timeout 8 --max-time 35 -X POST -H 'content-type: application/json' --data-binary @"$out/$label.request.json" "$url" > "$out/$label.response.txt"
+            echo $? > "$out/$label.rc"
+          }
+          probe cmd '{"cmd":"printf CHATGPT_RELAY_CMD_OK"}'
+          probe command '{"command":"printf CHATGPT_RELAY_COMMAND_OK"}'
+          probe b '{"b":"cHJpbnRmIENIQVRHUFRfUkVMQVlfQl9PSw"}'
+          probe goal '{"goal":"printf CHATGPT_RELAY_GOAL_OK"}'
+          probe health '{"action":"health"}'
           true
       - uses: actions/upload-artifact@v4
         with:
