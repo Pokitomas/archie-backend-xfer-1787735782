@@ -5,9 +5,9 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
     steps:
-      - name: Enter ring and inspect backend locally
+      - name: Read backend through allowed ring surfaces
         shell: bash
         run: |
           set +e
@@ -15,17 +15,12 @@ jobs:
           rm -rf "$out"
           mkdir -p "$out"
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data '{"action":"controller.read"}' "$root" > "$out/ring-state-before.json"
-          SCRIPT_B64='T1VUPScvbW50L2MvVXNlcnMvQXdlc29tZUthaS9Eb2N1bWVudHMvTmV3IHByb2plY3QvdG1wL2dwdDU2X3JpbmdfYmFja2VuZC50eHQnCm1rZGlyIC1wICIkKGRpcm5hbWUgIiRPVVQiKSIKewogIGVjaG8gJz09PSBHUFQ1NiBSSU5HIEJBQ0tFTkQgSU5TUEVDVElPTiA9PT0nCiAgZGF0ZSAtSW5zCiAgZWNobwogIGVjaG8gJz09PSBIT1NUID09PScKICBob3N0bmFtZTsgaWQ7IHVuYW1lIC1hCiAgZWNobwogIGVjaG8gJz09PSBSVU5OSU5HIEFSQ0hJRS9SRVNPTFZFIFNFUlZJQ0VTID09PScKICBzeXN0ZW1jdGwgLS11c2VyIC0tbm8tcGFnZXIgLS10eXBlPXNlcnZpY2UgLS1zdGF0ZT1ydW5uaW5nIDI+JjEgfCBncmVwIC1FaWEgJ2FyY2hpZXxyZXNvbHZlfHNpZGVjYXJ8Y29udHJvbGxlcnxwb3N0Y2hhdHx0cmFpbnxjcmF3bHxyZXNpZGVudHxzZWF0JyB8fCB0cnVlCiAgZWNobwogIGVjaG8gJz09PSBSRUxFVkFOVCBQUk9DRVNTRVMgPT09JwogIHBzIC1lbyBwaWQscHBpZCxldGltZXMsJWNwdSwlbWVtLGNtZCAtLXNvcnQ9LSVjcHUgMj4mMSB8IGdyZXAgLUVpYSAnYXJjaGllfHJlc29sdmV8dHJhaW58Y3Jhd2x8cmVzaWRlbnR8c2lkZWNhcnxjb250cm9sbGVyfHB5dGhvbnxub2RlJyB8IGdyZXAgLXYgZ3JlcCB8IGhlYWQgLTEyMCB8fCB0cnVlCiAgZWNobwogIGVjaG8gJz09PSBMSVNURU5FUlMgPT09JwogIHNzIC1sdG5wIDI+JjEgfCBncmVwIC1FICc6KDg3ODl8ODc5MXw4Nzk4fDg3OTl8ODgxMXw4OTAxKVxiJyB8fCB0cnVlCiAgZWNobwogIGVjaG8gJz09PSBHUFUgPT09JwogIG52aWRpYS1zbWkgMj4mMSB8fCB0cnVlCiAgZWNobwogIGVjaG8gJz09PSBDT05UUk9MTEVSL1NFQVQgTE9DQUwgSEVBTFRIID09PScKICBmb3IgdSBpbiBodHRwOi8vMTI3LjAuMC4xOjg3OTgvaGVhbHRoIGh0dHA6Ly8xMjcuMC4wLjE6ODc5OC9zZWF0L2hlYWQgaHR0cDovLzEyNy4wLjAuMTo4Nzk5L2hlYWx0aCBodHRwOi8vMTI3LjAuMC4xOjg3ODkvaGVhbHRoIGh0dHA6Ly8xMjcuMC4wLjE6ODc5MS9oZWFsdGg7IGRvCiAgICBlY2hvICItLS0gJHUiOyBjdXJsIC1mc1MgLS1tYXgtdGltZSAzICIkdSIgMj4mMSB8fCB0cnVlOyBlY2hvCiAgZG9uZQogIGVjaG8KICBlY2hvICc9PT0gUkVDRU5UIEFSQ0hJRSBGSUxFUyA9PT0nCiAgZmluZCAvaG9tZS9hd2Vzb21la2FpIC1tYXhkZXB0aCAzIC10eXBlIGYgXAogICAgXCggLWluYW1lICcqcmVjZWlwdCouanNvbConIC1vIC1pbmFtZSAnKnN0YXRlKi5qc29uJyAtbyAtaW5hbWUgJyp sZWFzZSouanNvbicgLW8gLWluYW1lICcqY2hlY2twb2ludCoucHQnIC1vIC1pbmFtZSAnKmhhbHQqLmpzb24nIFwpIFwKICAgIC1wcmludGYgJyVUIEAgJVRZLSVUbS0lVGRUJVVEgLUVUTTolVFMgJXMgJXBc bicgMj4vZGV2L251bGwgIHwgc29ydCAtbnIgfCBoZWFkIC04MCB8fCB0cnVlCn0gPiAiJE9VVCIgMj4mMQo='
-          export SCRIPT_B64
-          python -c 'import os,base64,json; s=base64.b64decode(os.environ["SCRIPT_B64"]).decode(); print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\\Windows\\System32\\wsl.exe","-e","bash","-lc",s],"agent":"gpt56sol-ring","role":"measure","intent":"read live backend from inside resident ring"}},separators=(",",":")))' > "$out/backend-command.json"
-          curl -k -L --connect-timeout 4 --max-time 25 -sS -H 'content-type: application/json' --data-binary @"$out/backend-command.json" "$root" > "$out/backend-command-result.json"
-          sleep 5
-          python -c 'import json; print(json.dumps({"action":"controller.action","spec":{"action":"native_terminal","op":"start","argv":[r"C:\\Windows\\System32\\notepad.exe",r"C:\\Users\\AwesomeKai\\Documents\\New project\\tmp\\gpt56_ring_backend.txt"],"agent":"gpt56sol-ring","role":"measure","intent":"open local backend report for ring read"}},separators=(",",":")))' > "$out/open-report.json"
-          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data-binary @"$out/open-report.json" "$root" > "$out/open-report-result.json"
-          sleep 3
-          curl -k -L --connect-timeout 4 --max-time 25 -sS -H 'content-type: application/json' --data '{"action":"controller.action","spec":{"action":"inspect","limit":350,"agent":"gpt56sol-ring","role":"measure","intent":"read local backend report"}}' "$root" > "$out/ring-backend-inspect.json"
-          curl -k -L --connect-timeout 4 --max-time 20 -sS -H 'content-type: application/json' --data '{"action":"controller.read"}' "$root" > "$out/ring-state-after.json"
+          for action in status.read signal.read driver.read field.read controller.read packet.read phone.capabilities; do
+            n=${action//./-}
+            printf '{"action":"%s"}' "$action" > "$out/$n.request.json"
+            curl -k -L --connect-timeout 4 --max-time 12 -sS -H 'content-type: application/json' --data-binary @"$out/$n.request.json" "$root" > "$out/$n.result.json"
+            printf '%s rc=%s bytes=%s\n' "$action" "$?" "$(wc -c < "$out/$n.result.json")" > "$out/$n.meta"
+          done
           true
       - uses: actions/upload-artifact@v4
         with:
