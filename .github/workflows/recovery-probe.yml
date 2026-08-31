@@ -5,35 +5,25 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
     steps:
-      - name: Drive surviving local-maker recovery hooks
+      - name: Map surviving file-stage ingress
         shell: bash
         run: |
           set -u
           out=/tmp/recovery-probe; mkdir -p "$out"
-          base='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone'
-          root="$base/v1/action"
-          for p in postchat postchat/ maker maker/ v1/maker v1/resolve v1/packet resolve packet; do
-            n=${p//\//_}; curl -k -L --connect-timeout 5 --max-time 12 -sS -D "$out/$n.headers" "$base/$p" -o "$out/$n.body"; echo $? > "$out/$n.rc"
-          done
-          cmd="wsl.exe -e bash -lc 'systemctl --user restart archie-live-state.service archie-controller.service 2>/dev/null || systemctl --user restart archie-controller.service archie-live-state.service; sleep 2; curl -fsS http://127.0.0.1:8798/health; echo; curl -fsS http://127.0.0.1:8798/seat/head; echo; curl -fsS http://127.0.0.1:8799/health'"
-          python - "$cmd" <<'PY' > "$out/packets.txt"
-          import json,sys
-          c=sys.argv[1]
-          packets=[
-            {'schema':'archie-resolve-pocket/v2','status':'requested','op':'shell','command':c},
-            {'schema':'archie-resolve-pocket/v2','status':'requested','action':{'op':'shell','command':c}},
-            {'schema':'archie-resolve-pocket/v2','status':'requested','request':{'op':'shell','command':c}},
-            {'schema':'archie-resolve-pocket/v2','status':'requested','kind':'shell','command':c},
-            {'schema':'archie-resolve-pocket/v2','status':'requested','action':'shell','command':c},
-          ]
-          for p in packets: print(json.dumps({'action':'packet.write','packet':p},separators=(',',':')))
+          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
+          printf '{"action":"file.stage"}' > "$out/missing.json"
+          printf '{"action":"file.stage.ayya"}' > "$out/ayya-missing.json"
+          printf '{"action":"file.stage.ayya.raw"}' > "$out/raw-missing.json"
+          for ext in json jsonl md png wav zip ps1 sh txt; do
+            python - "$ext" <<'PY' > "$out/stage-$ext.json"
+          import base64,json,sys
+          ext=sys.argv[1]; data=b'RECOVERY_STAGE_PROBE\n'
+          print(json.dumps({'action':'file.stage','name':'gpt56-recovery-probe.'+ext,'base64':base64.b64encode(data).decode()},separators=(',',':')))
           PY
-          i=0
-          while IFS= read -r line; do i=$((i+1)); printf '%s' "$line" > "$out/p$i.json"; curl -k -L --connect-timeout 5 --max-time 15 -sS -H 'content-type: application/json' --data-binary @"$out/p$i.json" "$root" > "$out/p$i.result.json"; sleep 4; printf '{"action":"packet.read"}' > "$out/read$i.json"; curl -k -L --connect-timeout 5 --max-time 15 -sS -H 'content-type: application/json' --data-binary @"$out/read$i.json" "$root" > "$out/read$i.result.json"; done < "$out/packets.txt"
-          printf '{"action":"status.read"}' > "$out/status.json"; curl -k -L --connect-timeout 5 --max-time 15 -sS -H 'content-type: application/json' --data-binary @"$out/status.json" "$root" > "$out/status.result.json"
-          printf '{"action":"field.read"}' > "$out/field.json"; curl -k -L --connect-timeout 5 --max-time 15 -sS -H 'content-type: application/json' --data-binary @"$out/field.json" "$root" > "$out/field.result.json"
+          done
+          for f in "$out"/*.json; do n=$(basename "$f" .json); curl -k -L --connect-timeout 5 --max-time 12 -sS -H 'content-type: application/json' --data-binary @"$f" "$root" > "$out/$n.result.json"; echo $? > "$out/$n.rc"; done
           true
       - uses: actions/upload-artifact@v4
         with:
