@@ -13,23 +13,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Drive Resolve to edit console
+      - name: Open Resolve console semantically
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
-          call(){ n="$1"; b="$2"; curl -k -L --max-time 20 -sS -H 'content-type: application/json' --data "$b" "$root" > "/tmp/archie-hotwire/$n.json"; }
-          call focus '{"action":"controller.action","spec":{"action":"focus","title":"DaVinci Resolve","agent":"gpt56sol-hotwire","role":"execute","intent":"resume safe Resolve edit"}}'
-          call edit '{"action":"controller.action","spec":{"action":"edit","agent":"gpt56sol-hotwire","role":"execute","intent":"return Resolve to Edit page"}}'
+          call(){ n="$1"; b="$2"; curl -k -L --max-time 20 -sS -H 'content-type: application/json' --data "$b" "$root" > "/tmp/archie-hotwire/$n.json" || true; }
+          call editclick '{"action":"controller.action","spec":{"action":"tap","x":909,"y":990,"agent":"gpt56sol-hotwire","role":"execute","intent":"switch Resolve to Edit page"}}'
           sleep 1
-          call workspace '{"action":"controller.action","spec":{"action":"tap","x":736,"y":14,"agent":"gpt56sol-hotwire","role":"execute","intent":"open Workspace menu for in-process console"}}'
+          call afteredit '{"action":"controller.action","spec":{"action":"inspect","limit":180,"agent":"gpt56sol-hotwire","role":"measure","intent":"verify Edit page"}}'
+          call workspace '{"action":"controller.action","spec":{"action":"poke","hwnd":32442934,"said":"Workspace","kind":"MenuItem","how":"invoke","agent":"gpt56sol-hotwire","role":"execute","intent":"open Workspace menu"}}'
           sleep 1
-          call inspect '{"action":"controller.action","spec":{"action":"inspect","limit":240,"agent":"gpt56sol-hotwire","role":"measure","intent":"locate Resolve Console menu item"}}'
-      - name: Upload private console state
+          call menu '{"action":"controller.action","spec":{"action":"inspect","limit":240,"agent":"gpt56sol-hotwire","role":"measure","intent":"locate Console menu entry"}}'
+      - name: Upload state
         uses: actions/upload-artifact@v4
         with:
-          name: archie-resolve-console-state
+          name: archie-resolve-console-menu
           path: /tmp/archie-hotwire
           retention-days: 1
-          if-no-files-found: error
