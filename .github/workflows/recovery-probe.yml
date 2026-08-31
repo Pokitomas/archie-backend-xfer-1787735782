@@ -7,24 +7,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Probe controller read paths
+      - name: Inspect surviving phone shell
         shell: bash
         run: |
           set -u
-          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
+          base='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/'
           out=/tmp/recovery-probe
           mkdir -p "$out"
-          python - <<'PY' > "$out/head.json"
-          import json
-          print(json.dumps({'action':'controller.read','spec':{'path':'/seat/head','agent':'gpt56sol-recovery','role':'measure','intent':'read seat head without native terminal'}},separators=(',',':')))
-          PY
-          python - <<'PY' > "$out/controller.json"
-          import json
-          print(json.dumps({'action':'controller.read','spec':{'path':'/controller','agent':'gpt56sol-recovery','role':'measure','intent':'read canonical controller state'}},separators=(',',':')))
-          PY
-          for n in head controller; do
-            curl -k -L --max-time 18 -sS -H 'content-type: application/json' --data-binary @"$out/$n.json" "$root" > "$out/$n-result.json"; echo $? > "$out/$n.rc"
-          done
+          curl -k -L --max-time 15 -sS "$base.well-known/archie-phone.json" -o "$out/well-known.json" || true
+          curl -k -L --max-time 15 -sS "$base" -o "$out/index.html" || true
+          src=$(grep -oE '<script[^>]+src="[^"]+"' "$out/index.html" | head -1 | sed -E 's/.*src="([^"]+)".*/\1/' || true)
+          if [ -n "$src" ]; then curl -k -L --max-time 15 -sS "$base${src#./}" -o "$out/hands.js" || true; fi
+          grep -nEi 'restart|bootstrap|repair|service|native_terminal|controller\.|push\.|training|workspace_patch|action[:=]|call\(' "$out/hands.js" 2>/dev/null | head -500 > "$out/action-hints.txt" || true
           true
       - uses: actions/upload-artifact@v4
         with:
