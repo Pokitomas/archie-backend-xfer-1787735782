@@ -13,20 +13,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Read edit progress
+      - name: Drive Resolve to edit console
         shell: bash
         run: |
           set -euo pipefail
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
-          post(){ name="$1"; body="$2"; curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data "$body" "$root" > "/tmp/archie-hotwire/${name}.json" || true; }
-          post state '{"action":"controller.read"}'
-          post inspect '{"action":"controller.action","spec":{"action":"inspect","limit":240,"agent":"operator-phone","role":"measure","intent":"verify Resolve edit progress"}}'
-          post windows '{"action":"controller.action","spec":{"action":"windows","limit":80,"agent":"operator-phone","role":"measure","intent":"verify Resolve surfaces"}}'
-      - name: Upload private progress state
+          call(){ n="$1"; b="$2"; curl -k -L --max-time 20 -sS -H 'content-type: application/json' --data "$b" "$root" > "/tmp/archie-hotwire/$n.json"; }
+          call focus '{"action":"controller.action","spec":{"action":"focus","title":"DaVinci Resolve","agent":"gpt56sol-hotwire","role":"execute","intent":"resume safe Resolve edit"}}'
+          call edit '{"action":"controller.action","spec":{"action":"edit","agent":"gpt56sol-hotwire","role":"execute","intent":"return Resolve to Edit page"}}'
+          sleep 1
+          call workspace '{"action":"controller.action","spec":{"action":"tap","x":736,"y":14,"agent":"gpt56sol-hotwire","role":"execute","intent":"open Workspace menu for in-process console"}}'
+          sleep 1
+          call inspect '{"action":"controller.action","spec":{"action":"inspect","limit":240,"agent":"gpt56sol-hotwire","role":"measure","intent":"locate Resolve Console menu item"}}'
+      - name: Upload private console state
         uses: actions/upload-artifact@v4
         with:
-          name: archie-edit-progress
+          name: archie-resolve-console-state
           path: /tmp/archie-hotwire
           retention-days: 1
           if-no-files-found: error
