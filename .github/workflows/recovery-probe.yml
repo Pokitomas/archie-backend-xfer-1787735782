@@ -5,26 +5,20 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
     steps:
-      - name: Measure desktop ring HTTP and receipts
+      - name: Probe new host rescue and ring
         shell: bash
         run: |
           set +e
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
-          probe(){
-            label="$1"; data="$2"
-            printf '%s' "$data" > "$out/$label.request.json"
-            curl -k -L -sS --connect-timeout 4 --max-time 12 -D "$out/$label.headers" -o "$out/$label.body" -w '%{http_code}\n' -H 'content-type: application/json' --data-binary @"$out/$label.request.json" "$root" > "$out/$label.http"
-            echo $? > "$out/$label.rc"
-          }
-          probe status0 '{"action":"status.read"}'
-          probe keyf24 '{"action":"desktop.key","spec":{"key":"f24"}}'
-          probe keyesc '{"action":"desktop.key","spec":{"key":"esc"}}'
-          probe driver '{"action":"driver.read"}'
-          probe signal '{"action":"signal.read"}'
-          probe caps '{"action":"phone.capabilities"}'
+          host='desktop-6fn9b4m-1.tail1bf489.ts.net'
+          curl -k -sS --connect-timeout 4 --max-time 12 -D "$out/rescue.headers" -o "$out/rescue.body" -w '%{http_code}\n' "https://$host:8443/health" > "$out/rescue.http"; echo $? > "$out/rescue.rc"
+          root="https://$host/archie-phone/v1/action"
+          for action in status.read phone.capabilities driver.read signal.read; do
+            n=${action//./-}; printf '{"action":"%s"}' "$action" > "$out/$n.request.json"
+            curl -k -L -sS --connect-timeout 4 --max-time 12 -D "$out/$n.headers" -o "$out/$n.body" -w '%{http_code}\n' -H 'content-type: application/json' --data-binary @"$out/$n.request.json" "$root" > "$out/$n.http"; echo $? > "$out/$n.rc"
+          done
           true
       - uses: actions/upload-artifact@v4
         with:
