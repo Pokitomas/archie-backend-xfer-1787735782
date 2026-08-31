@@ -13,19 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Capture action client
+      - name: Probe action envelope
         shell: bash
         run: |
           set -euo pipefail
-          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/'
+          root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           mkdir -p /tmp/archie-hotwire
-          curl -k -L --max-time 20 -sS "${root}hands.js?v=97" > /tmp/archie-hotwire/hands.js
-          curl -k -L --max-time 15 -sS "$root.well-known/archie-phone.json" > /tmp/archie-hotwire/well-known.json
-          wc -c /tmp/archie-hotwire/*
-      - name: Upload private client artifact
+          post(){ name="$1"; body="$2"; curl -k -L --max-time 25 -sS -D "/tmp/archie-hotwire/${name}.headers" -H 'content-type: application/json' --data "$body" "$root" > "/tmp/archie-hotwire/${name}.json" || true; }
+          post capabilities '{"action":"controller.capabilities"}'
+          post inspect '{"action":"controller.action","spec":{"action":"inspect","limit":8,"agent":"operator-phone","role":"measure","intent":"hotwire read-only surface probe"}}'
+          for f in /tmp/archie-hotwire/*.json; do echo "$(basename "$f") $(wc -c < "$f")"; done
+      - name: Upload private action probe
         uses: actions/upload-artifact@v4
         with:
-          name: archie-hotwire-client-js
+          name: archie-hotwire-actions
           path: /tmp/archie-hotwire
           retention-days: 1
           if-no-files-found: error
