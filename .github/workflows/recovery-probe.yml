@@ -6,9 +6,9 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
-      - name: Bridge OIDC into rescue and open low-latency tunnel
+      - name: Audit Codex ring state through live ingress
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -21,58 +21,70 @@ jobs:
           broker_json=$(curl -fsS -H "Authorization: Bearer $oidc" "$broker")
           token=$(printf '%s' "$broker_json" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x.get("ok"); print(x["token"])')
           cat > /tmp/pc-cmd <<'CMD'
-          set -Eeuo pipefail
-          echo "ENTRY_HOST=$(hostname)"
-          echo "ENTRY_TIME=$(date -Is)"
-          marker="$HOME/.archie-rescue-live-proof"
-          printf 'assistant-live %s\n' "$(date -Is)" > "$marker"
-          echo "MARKER_READ=$(cat "$marker")"
-          rm -f "$marker"
-          test ! -e "$marker" && echo 'MARKER_DELETE=PASS'
-          base="$HOME/.local/share/archie-rescue"
-          mkdir -p "$base"
-          cfbin="$(command -v cloudflared || true)"
-          if [ -z "$cfbin" ]; then
-            mkdir -p "$HOME/.local/bin"
-            cfbin="$HOME/.local/bin/cloudflared"
-            curl -fL --retry 2 --connect-timeout 8 --max-time 60 -o "$cfbin.tmp" 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64'
-            chmod 700 "$cfbin.tmp"
-            mv "$cfbin.tmp" "$cfbin"
-          fi
-          pkill -x cloudflared 2>/dev/null || true
-          : > "$base/cloudflared.log"
-          nohup "$cfbin" tunnel --no-autoupdate --url http://127.0.0.1:8787 > "$base/cloudflared.log" 2>&1 </dev/null &
-          echo $! > "$base/cloudflared.pid"
-          cf=''
-          for i in $(seq 1 30); do
-            cf=$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$base/cloudflared.log" | tail -1 || true)
-            [ -n "$cf" ] && break
-            sleep 1
+          set +e
+          echo '=== LIVE ENTRY ==='
+          date -Is; hostname; id; uptime
+          echo '=== RUNNING RING/ARCHIE/CODEX SERVICES ==='
+          systemctl --user list-units --type=service --state=running --no-pager 2>&1 | grep -Ei 'archie|ring|spsc|codex|ghost|seat|sidecar|controller|remote|toolbus|exec' | head -140
+          echo '=== ALL MATCHING UNIT FILES ==='
+          systemctl --user list-unit-files --type=service --no-pager 2>&1 | grep -Ei 'archie|ring|spsc|codex|ghost|seat|sidecar|controller|remote|toolbus|exec' | head -180
+          echo '=== LISTENERS ==='
+          ss -ltnp 2>&1 | grep -E '127\.0\.0\.1|172\.' | head -220
+          echo '=== MATCHING PROCESSES ==='
+          ps -eo pid,ppid,lstart,etimes,%cpu,%mem,cmd --sort=-%cpu 2>&1 | grep -Ei '[a]rchie|[r]ing|[s]psc|[c]odex|[g]host|[s]eat|[s]idecar|[c]ontroller|[t]oolbus|[r]emote|[l]ive_exec' | head -180
+          echo '=== RECENT USER UNIT FILES (3H) ==='
+          find "$HOME/.config/systemd/user" -maxdepth 2 -type f -mmin -180 -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort -r | head -180
+          echo '=== RECENT HOME RING/CODEX FILES (3H) ==='
+          find "$HOME" -maxdepth 5 -type f -mmin -180 \( -iname '*ring*' -o -iname '*spsc*' -o -iname '*archie*' -o -iname '*codex*' -o -iname '*ghost*' -o -iname '*seat*' -o -iname '*sidecar*' -o -iname '*controller*' -o -iname '*remote*' -o -iname '*toolbus*' -o -iname '*runtime*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort -r | head -260
+          echo '=== RECENT WINDOWS PROJECT/TEMP MATCHES (3H) ==='
+          for root in '/mnt/c/Users/AwesomeKai/Documents/New project' '/mnt/c/Users/AwesomeKai/AppData/Local/Temp'; do
+            echo "--- $root"
+            find "$root" -maxdepth 5 -type f -mmin -180 \( -iname '*ring*' -o -iname '*spsc*' -o -iname '*archie*' -o -iname '*codex*' -o -iname '*ghost*' -o -iname '*seat*' -o -iname '*sidecar*' -o -iname '*controller*' -o -iname '*remote*' -o -iname '*runtime*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort -r | head -180
           done
-          [ -n "$cf" ] || { echo 'CLOUDFLARE_FAILED'; tail -n 80 "$base/cloudflared.log"; exit 21; }
-          echo "CF_URL=$cf"
-          echo "CF_PID=$(cat "$base/cloudflared.pid")"
-          curl -fsS http://127.0.0.1:8787/health
+          echo '=== CANDIDATE RING DIRECTORIES ==='
+          find "$HOME" '/mnt/c/Users/AwesomeKai/Documents/New project' -maxdepth 4 -type d \( -iname '*ring*' -o -iname '*spsc*' -o -iname '*codex*' -o -iname '*ghost*' \) -print 2>/dev/null | head -180
+          echo '=== REPO HEADS FROM MACHINE ==='
+          for d in "$HOME/archie-remote" "$HOME/archie" '/mnt/c/Users/AwesomeKai/Documents/New project'; do
+            [ -d "$d/.git" ] || continue
+            echo "--- REPO $d"
+            git -C "$d" status --short 2>&1 | head -100
+            git -C "$d" log -12 --date=iso --pretty='format:%h %ad %an %s' 2>&1 | head -20
+          done
+          echo '=== KNOWN LOCAL HTTP SURFACES ==='
+          for p in 8787 8789 8791 8792 8796 8798 8799 8800 8811 8901; do
+            printf 'PORT %s ' "$p"
+            curl -sS --connect-timeout .25 --max-time .8 -o /tmp/pbody -w 'HTTP=%{http_code} T=%{time_total}' "http://127.0.0.1:$p/health" 2>/dev/null
+            rc=$?; printf ' rc=%s body=' "$rc"; head -c 420 /tmp/pbody 2>/dev/null; echo
+          done
+          echo '=== RUNTIME TRUTH SUMMARY ==='
+          python3 - <<'PY'
+          import json,pathlib
+          for p in [pathlib.Path.home()/'archie-remote/runtime_truth.json', pathlib.Path('/mnt/c/Users/AwesomeKai/AppData/Local/Temp/ARCHIE_FIELD_STATE.json')]:
+              print('---',p)
+              try:
+                  x=json.loads(p.read_text(errors='replace'))
+                  keep={k:x.get(k) for k in ('schema','at','seq','basis','front','field','health','services','controller','worker','last_mutation') if k in x}
+                  print(json.dumps(keep,indent=2,ensure_ascii=False)[:12000])
+              except Exception as e: print(type(e).__name__,e)
+          PY
           CMD
           export PC_CMD="$(cat /tmp/pc-cmd)"
           python3 - <<'PY' >/tmp/payload.json
           import json,os
-          print(json.dumps({'cmd':os.environ['PC_CMD'],'timeout':120}))
+          print(json.dumps({'cmd':os.environ['PC_CMD'],'timeout':150}))
           PY
           ok=0
           for ip in 208.111.34.11 208.111.35.209; do
-            if curl -fkSs --resolve "$host:8443:$ip" --connect-timeout 8 --max-time 150 \
+            if curl -fkSs --resolve "$host:8443:$ip" --connect-timeout 8 --max-time 175 \
               -H "Authorization: Bearer $token" -H 'content-type: application/json' \
-              --data-binary @/tmp/payload.json "$rescue/exec" > "$out/entry.json"; then ok=1; break; fi
+              --data-binary @/tmp/payload.json "$rescue/exec" > "$out/audit.json"; then ok=1; break; fi
           done
           [ "$ok" = 1 ]
-          python3 - "$out/entry.json" <<'PY' > "$out/receipt.txt"
+          python3 - "$out/audit.json" <<'PY' > "$out/audit.txt"
           import json,sys
           x=json.load(open(sys.argv[1])); print('ok='+str(x.get('ok'))); print('rc='+str(x.get('rc'))); print(x.get('stdout',''))
           if x.get('stderr'): print('STDERR\n'+x['stderr'])
           PY
-          grep -q 'MARKER_DELETE=PASS' "$out/receipt.txt"
-          grep -q 'CF_URL=https://' "$out/receipt.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
