@@ -5,20 +5,26 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Inspect surviving phone shell
+      - name: Probe surviving recovery surfaces
         shell: bash
         run: |
           set -u
-          base='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/'
           out=/tmp/recovery-probe
           mkdir -p "$out"
-          curl -k -L --max-time 15 -sS "$base.well-known/archie-phone.json" -o "$out/well-known.json" || true
-          curl -k -L --max-time 15 -sS "$base" -o "$out/index.html" || true
-          src=$(grep -oE '<script[^>]+src="[^"]+"' "$out/index.html" | head -1 | sed -E 's/.*src="([^"]+)".*/\1/' || true)
-          if [ -n "$src" ]; then curl -k -L --max-time 15 -sS "$base${src#./}" -o "$out/hands.js" || true; fi
-          grep -nEi 'restart|bootstrap|repair|service|native_terminal|controller\.|push\.|training|workspace_patch|action[:=]|call\(' "$out/hands.js" 2>/dev/null | head -500 > "$out/action-hints.txt" || true
+          phone='https://desktop-6fn9b4m.tail1bf489.ts.net'
+          power='https://desktop-6fn9b4m-1.tail1bf489.ts.net:8443'
+          probe(){ n="$1"; u="$2"; curl -k -L --connect-timeout 5 --max-time 12 -sS -D "$out/$n.headers" "$u" -o "$out/$n.body"; echo $? > "$out/$n.rc"; }
+          probe phone_health "$phone/archie-phone/health" || true
+          probe postchat "$phone/postchat/" || true
+          probe postchat_health "$phone/postchat/health" || true
+          probe maker "$phone/maker/" || true
+          probe power_root "$power/" || true
+          probe power_status "$power/status" || true
+          probe power_health "$power/health" || true
+          probe power_control "$power/control.html" || true
+          probe power_console "$power/console.html" || true
           true
       - uses: actions/upload-artifact@v4
         with:
