@@ -7,37 +7,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Probe surviving controller ingress
+      - name: Probe controller read paths
         shell: bash
         run: |
           set -u
           root='https://desktop-6fn9b4m.tail1bf489.ts.net/archie-phone/v1/action'
           out=/tmp/recovery-probe
           mkdir -p "$out"
-          curl -k -L --max-time 20 -sS -D "$out/get.headers" "$root" -o "$out/get.body"; echo $? > "$out/get.rc"
-          python - <<'PY' > "$out/start.json"
+          python - <<'PY' > "$out/head.json"
           import json
-          spec={
-            'action':'controller.action',
-            'spec':{
-              'action':'native_terminal','op':'start',
-              'argv':[r'C:\Users\AwesomeKai\AppData\Local\Programs\Python\Python312\python.exe','-c',"import pathlib,time; print('RECOVERY_PROBE_OK', time.time()); p=pathlib.Path(r'C:\\Users\\AwesomeKai\\AppData\\Local\\ModelRing\\model_ring.py'); print('MODEL_RING_FILE',p.exists())"],
-              'agent':'gpt56sol-recovery','role':'measure','intent':'re-enter surviving controller and identify post-cutover state'
-            }
-          }
-          print(json.dumps(spec,separators=(',',':')))
+          print(json.dumps({'action':'controller.read','spec':{'path':'/seat/head','agent':'gpt56sol-recovery','role':'measure','intent':'read seat head without native terminal'}},separators=(',',':')))
           PY
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @"$out/start.json" "$root" > "$out/start-result.json"; echo $? > "$out/start.rc"
-          python - <<'PY' "$out/start-result.json" > "$out/poll-request.json"
-          import json,sys
-          try:
-            v=json.load(open(sys.argv[1])); r=v.get('result') or {}; i=(r.get('result') or r) if isinstance(r,dict) else {}; tid=i.get('terminal_id')
-          except Exception:
-            tid=None
-          print(json.dumps({'action':'controller.action','spec':{'action':'native_terminal','op':'poll','terminal_id':tid,'agent':'gpt56sol-recovery','role':'measure','intent':'capture recovery probe'}},separators=(',',':')))
+          python - <<'PY' > "$out/controller.json"
+          import json
+          print(json.dumps({'action':'controller.read','spec':{'path':'/controller','agent':'gpt56sol-recovery','role':'measure','intent':'read canonical controller state'}},separators=(',',':')))
           PY
-          sleep 3
-          curl -k -L --max-time 25 -sS -H 'content-type: application/json' --data-binary @"$out/poll-request.json" "$root" > "$out/poll.json"; echo $? > "$out/poll.rc"
+          for n in head controller; do
+            curl -k -L --max-time 18 -sS -H 'content-type: application/json' --data-binary @"$out/$n.json" "$root" > "$out/$n-result.json"; echo $? > "$out/$n.rc"
+          done
           true
       - uses: actions/upload-artifact@v4
         with:
