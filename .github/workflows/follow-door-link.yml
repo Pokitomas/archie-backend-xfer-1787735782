@@ -1,0 +1,19 @@
+name: follow temporary door link
+on:
+  push:
+    paths:
+      - 'door-link.md'
+      - '.github/workflows/follow-door-link.yml'
+jobs:
+  follow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Follow the one-shot URL stored in door-link.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=$(sed -n 's/^\[go\](\(https:.*\))$/\1/p' door-link.md)
+          test -n "$url"
+          curl --fail-with-body --silent --show-error --max-time 75 "$url" | tee /tmp/door-response.json
