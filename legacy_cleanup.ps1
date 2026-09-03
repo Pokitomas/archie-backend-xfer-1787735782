@@ -35,12 +35,10 @@ if (-not $Apply) {
   exit 0
 }
 
-# Stop the native resident if this exact image is running.
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object { $_.ExecutablePath -eq "$env:LOCALAPPDATA\ARCHIE\resident\archie.exe" } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
-# Remove the exact Windows persistence roots observed in the forensic dump.
 Unregister-ScheduledTask -TaskName 'ARCHIE Interactive Worker' -Confirm:$false -ErrorAction SilentlyContinue
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'ArchieChatGPTIngressV2' -ErrorAction SilentlyContinue
 
@@ -48,9 +46,10 @@ $wsl = (Get-Command wsl.exe -ErrorAction SilentlyContinue)
 if ($wsl) {
   foreach ($u in $units) {
     & wsl.exe -e bash -lc "systemctl --user disable --now '$u' >/dev/null 2>&1 || true"
+    & wsl.exe -e bash -lc "rm -f \"`$HOME/.config/systemd/user/$u\""
   }
   & wsl.exe -e bash -lc "crontab -l 2>/dev/null | grep -v 'archie-watchdog' | crontab - 2>/dev/null || true"
-  & wsl.exe -e bash -lc "rm -f ~/.config/systemd/user/archie-*.service ~/.config/systemd/user/archie-*.timer ~/.config/systemd/user/archie-*.target ~/archie-watchdog.sh ~/.local/bin/gpt56-ring-enter; systemctl --user daemon-reload >/dev/null 2>&1 || true"
+  & wsl.exe -e bash -lc "rm -f \"`$HOME/archie-watchdog.sh\" \"`$HOME/.local/bin/gpt56-ring-enter\"; systemctl --user daemon-reload >/dev/null 2>&1 || true"
 }
 foreach ($p in $paths) {
   if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
