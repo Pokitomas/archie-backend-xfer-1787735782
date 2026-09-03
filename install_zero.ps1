@@ -13,9 +13,10 @@ if (-not $Apply) {
 $python = (Get-Command python.exe -ErrorAction SilentlyContinue)
 if (-not $python) { $python = (Get-Command py.exe -ErrorAction SilentlyContinue) }
 if (-not $python) { throw 'Python is required for the current ARCHIE Zero kernel.' }
+$pythonExe = $python.Source
 
 # Prove the replacement before removing the observed legacy backend.
-& $python.Source (Join-Path $here 'computer.py') self-test
+& $pythonExe (Join-Path $here 'computer.py') self-test
 if ($LASTEXITCODE -ne 0) { throw 'computer.py self-test failed; legacy backend left untouched.' }
 
 & (Join-Path $here 'legacy_cleanup.ps1') -Apply
@@ -26,7 +27,7 @@ Copy-Item -Force (Join-Path $here 'computer.py') (Join-Path $dest 'computer.py')
 Copy-Item -Force (Join-Path $here 'resident.py') (Join-Path $dest 'resident.py')
 Copy-Item -Force (Join-Path $here 'PROTOCOL.md') (Join-Path $dest 'PROTOCOL.md')
 
-& $python.Source (Join-Path $dest 'computer.py') self-test
+& $pythonExe (Join-Path $dest 'computer.py') self-test
 if ($LASTEXITCODE -ne 0) { throw 'installed kernel self-test failed.' }
 
 $receipt = [ordered]@{
