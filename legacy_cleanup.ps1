@@ -46,10 +46,11 @@ $wsl = (Get-Command wsl.exe -ErrorAction SilentlyContinue)
 if ($wsl) {
   foreach ($u in $units) {
     & wsl.exe -e bash -lc "systemctl --user disable --now '$u' >/dev/null 2>&1 || true"
-    & wsl.exe -e bash -lc "rm -f \"`$HOME/.config/systemd/user/$u\""
+    $rmUnit = 'rm -f "$HOME/.config/systemd/user/' + $u + '"'
+    & wsl.exe -e bash -lc $rmUnit
   }
   & wsl.exe -e bash -lc "crontab -l 2>/dev/null | grep -v 'archie-watchdog' | crontab - 2>/dev/null || true"
-  & wsl.exe -e bash -lc "rm -f \"`$HOME/archie-watchdog.sh\" \"`$HOME/.local/bin/gpt56-ring-enter\"; systemctl --user daemon-reload >/dev/null 2>&1 || true"
+  & wsl.exe -e bash -lc 'rm -f "$HOME/archie-watchdog.sh" "$HOME/.local/bin/gpt56-ring-enter"; systemctl --user daemon-reload >/dev/null 2>&1 || true'
 }
 foreach ($p in $paths) {
   if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
